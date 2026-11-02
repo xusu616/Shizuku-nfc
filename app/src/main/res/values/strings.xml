@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Shizuku NFC</string>
+    <string name="title_shizuku_status">Shizuku 状态</string>
+    <string name="title_nfc_action">NFC 碰一下模拟</string>
+    <string name="btn_trigger">模拟触发碰一下</string>
+    <string name="btn_request_permission">请求 Shizuku 授权</string>
+</resources>

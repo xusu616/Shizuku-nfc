@@ -1,0 +1,4 @@
+-keep class rikka.shizuku.** { *; }
+-keep interface rikka.shizuku.** { *; }
+-keep class android.nfc.** { *; }
+-keep class org.shizuku.nfc.** { *; }
