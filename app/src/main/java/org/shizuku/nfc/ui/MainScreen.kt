@@ -32,8 +32,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import org.shizuku.nfc.NfcEmulator
+import org.shizuku.nfc.R
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.*
@@ -57,6 +59,10 @@ fun MainScreen(
     val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
+    val updateViewModel: UpdatePromptViewModel = viewModel()
+
+    // 启动时自动检查更新（完全仿照 shizuku-ftp 逻辑）
+    StartupUpdatePrompt(ready = true, viewModel = updateViewModel)
 
     var selectedMode by remember { mutableStateOf(PayloadMode.DEFAULT_ALIPAY) }
     var customHexInput by remember { mutableStateOf("") }
@@ -143,6 +149,25 @@ fun MainScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            appendLog("正在向 GitHub 检查最新发布版本...")
+                            updateViewModel.checkManually { isNew, ver ->
+                                if (isNew) {
+                                    appendLog("检测到新版本: $ver")
+                                } else {
+                                    appendLog("当前已是最新版本 (${ver ?: ""})")
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.update_already_latest, ver ?: ""),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = "检查更新")
+                    }
                     IconButton(onClick = {
                         logs.clear()
                         appendLog("日志已清空")
