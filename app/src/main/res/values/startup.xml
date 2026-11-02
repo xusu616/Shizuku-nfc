@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="guide_replay_title">Show the welcome guide again</string>
+    <string name="guide_replay_body">Review wallpaper customization, touch NFC injection, NDEF payloads, and Shizuku permissions.</string>
+    <string name="guide_welcome">Welcome to Shizuku NFC</string>
+    <string name="guide_wallpaper_title">Customize your background</string>
+    <string name="guide_wallpaper_body">Touch and hold the wallpaper area to choose a custom picture or enjoy the frosted glass atmosphere.</string>
+    <string name="guide_trigger_title">One-click Touch Injection</string>
+    <string name="guide_trigger_body">Tap the central capsule button to simulate an authentic NFC Touch event, dispatching directly to Alipay.</string>
+    <string name="guide_payload_title">NDEF Payload Management</string>
+    <string name="guide_payload_body">Switch between built-in Alipay axdk, extracted ndef assets, local .ndef files, or raw HEX strings.</string>
+    <string name="guide_permissions_title">Shizuku &amp; System Permissions</string>
+    <string name="guide_permissions_body">Check Shizuku service status, UID 2000 authorization, and system NFC stack integration.</string>
+    <string name="guide_skip">Skip</string>
+    <string name="guide_back">Back</string>
+    <string name="guide_next">Next</string>
+    <string name="guide_done">Get started</string>
+    <string name="guide_replay">Restart Guide</string>
+</resources>

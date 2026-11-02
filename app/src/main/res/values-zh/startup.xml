@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="guide_replay_title">再次查看快速入门引导</string>
+    <string name="guide_replay_body">重新了解壁纸定制、碰一下一键注入、NDEF 负载配置与 Shizuku 权限管理。</string>
+    <string name="guide_welcome">欢迎使用 Shizuku NFC</string>
+    <string name="guide_wallpaper_title">专属壁纸与拟态质感</string>
+    <string name="guide_wallpaper_body">长按顶部背景区域可自由选择图片，全局享受沉浸式毛玻璃拟态质感。</string>
+    <string name="guide_trigger_title">一键碰一下模拟注入</string>
+    <string name="guide_trigger_body">点击正中央高光胶囊按钮，免 Root 模拟硬件刷卡，直接唤醒支付宝并跳转碰一下小程序。</string>
+    <string name="guide_payload_title">NDEF 负载自由切换</string>
+    <string name="guide_payload_body">支持内置 axdk 官方链接、小元宝提取文件、本地任意 .ndef 文件选择及 HEX 字节串实时解析。</string>
+    <string name="guide_permissions_title">Shizuku 特权与状态监控</string>
+    <string name="guide_permissions_body">随时监控 Shizuku 服务运行与 UID 2000 授权，点击侧边或控制台按钮可快速管理特权。</string>
+    <string name="guide_skip">跳过</string>
+    <string name="guide_back">上一步</string>
+    <string name="guide_next">下一步</string>
+    <string name="guide_done">开始使用</string>
+    <string name="guide_replay">重新引导</string>
+</resources>
