@@ -9,6 +9,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,12 +20,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -74,21 +77,14 @@ fun MainScreen(
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
 
     // 引导与更新 ViewModel（完全对齐 shizuku-ftp 架构）
-    val startupViewModel: StartupViewModel = if (LocalInspectionMode.current) {
-        viewModel()
-    } else {
-        viewModel()
-    }
-    val updateViewModel: UpdatePromptViewModel = if (LocalInspectionMode.current) {
-        viewModel()
-    } else {
-        viewModel()
-    }
+    val startupViewModel: StartupViewModel = viewModel()
+    val updateViewModel: UpdatePromptViewModel = viewModel()
 
     var startupReady by remember { mutableStateOf(false) }
 
-    // 弹窗状态
+    // 弹窗与抽屉状态
     var showShizukuDialog by remember { mutableStateOf(false) }
+    var isSidebarOpen by remember { mutableStateOf(false) }
     var railVisible by remember { mutableStateOf(true) }
     var isDispatching by remember { mutableStateOf(false) }
 
@@ -221,7 +217,16 @@ fun MainScreen(
         }
     }
 
-    // 核心触发操作
+    val currentModeTitle = remember(selectedMode, selectedFileName) {
+        when (selectedMode) {
+            PayloadMode.DEFAULT_ALIPAY -> "支付宝碰一下 (axdk 官方)"
+            PayloadMode.ASSET_FILE -> "小元宝提取包 (xiaoyuanpao)"
+            PayloadMode.LOCAL_FILE -> "本地文件: ${selectedFileName ?: "未选择"}"
+            PayloadMode.CUSTOM_HEX -> "自定义 HEX 二进制字节流"
+        }
+    }
+
+    // 核心碰一下模拟派发
     fun doTriggerTouch() {
         if (!isShizukuRunning) {
             Toast.makeText(context, "Shizuku 未运行，请先在 Shizuku App 中启动服务！", Toast.LENGTH_LONG).show()
@@ -274,6 +279,10 @@ fun MainScreen(
         targetValue = if (railVisible) 180f else 0f,
         label = "BarVisibleRotation"
     )
+    val gearRotation by animateFloatAsState(
+        targetValue = if (isSidebarOpen) 180f else 0f,
+        label = "GearRotation"
+    )
     val cornerRadius = getRadius()
 
     // ── 外层全屏容器 ──
@@ -318,10 +327,9 @@ fun MainScreen(
             NarrowWallpaperRail(
                 currentTime = currentTime,
                 batteryState = batteryState,
-                onSettingsClick = { showShizukuDialog = true },
-                onReplayGuideClick = {
-                    startupViewModel.replay()
-                },
+                gearRotation = gearRotation,
+                onOpenSidebar = { isSidebarOpen = !isSidebarOpen },
+                onReplayGuideClick = { startupViewModel.replay() },
                 onUpdateClick = {
                     updateViewModel.checkManually { isNewAvailable, version ->
                         if (!isNewAvailable) {
@@ -336,7 +344,7 @@ fun MainScreen(
             )
         }
 
-        // ── 主内容面板容器 (带平滑缩进和圆角剪裁) ──
+        // ── 主内容面板容器 (极简简约风格，所有复杂配置收缩至抽屉) ──
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -349,7 +357,7 @@ fun MainScreen(
                 topBarPressedDown = true,
                 onWallpaperLongPress = { wallpaperPicker.launch("image/*") }
             ) {
-                // 顶部控制行：展开/折叠侧边栏 + 高光碰一下胶囊按钮 + 重新引导快捷入口
+                // 顶部控制行：折叠侧栏 + 居中高光碰一下胶囊按钮 + 打开设置抽屉入口
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -375,302 +383,430 @@ fun MainScreen(
 
                     Spacer(modifier = Modifier.weight(0.1f))
 
-                    // 重新引导快捷按钮
+                    // 设置与负载配置抽屉展开按钮 (Gear)
                     FilledTonalIconButton(
-                        onClick = { startupViewModel.replay() },
+                        onClick = { isSidebarOpen = true },
                         modifier = Modifier.size(48.dp),
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.refresh),
-                            contentDescription = stringResource(R.string.guide_replay),
-                            modifier = Modifier.size(22.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.gear),
+                            contentDescription = "打开设置与负载抽屉",
+                            modifier = Modifier
+                                .size(24.dp)
+                                .rotate(gearRotation)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
-                // 卡片垂直流容器
-                Column(
+                // ── 简约卡片 1：当前活跃 NDEF 负载与 Shizuku 状态胶囊条 ──
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                        .padding(horizontal = 18.dp)
+                        .clickable { isSidebarOpen = true },
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                    )
                 ) {
-                    // ── 1. Shizuku 运行与授权状态卡片 ──
-                    Card(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { showShizukuDialog = true },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                        )
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(14.dp)
-                                        .background(
-                                            if (isShizukuRunning && isShizukuPermissionGranted) Color(0xFF4CAF50)
-                                            else MaterialTheme.colorScheme.error,
-                                            CircleShape
-                                        )
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .background(
+                                        if (isShizukuRunning && isShizukuPermissionGranted) Color(0xFF4CAF50)
+                                        else MaterialTheme.colorScheme.error,
+                                        CircleShape
+                                    )
+                            )
+                            Column {
+                                Text(
+                                    text = currentModeTitle,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                Column {
-                                    Text(
-                                        text = if (isShizukuRunning) "Shizuku 正常运行 (v$shizukuVersion)" else "Shizuku 未启动",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = if (isShizukuPermissionGranted) "UID 2000 权限已就绪 (可注入 NFC)" else "未获得授权，点击查看详情",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            if (!isShizukuPermissionGranted && isShizukuRunning) {
-                                Button(
-                                    onClick = onRequestPermission,
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                ) {
-                                    Text("申请授权", fontSize = 12.sp)
-                                }
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                Text(
+                                    text = if (isShizukuRunning && isShizukuPermissionGranted)
+                                        "UID 2000 就绪 · 包含 ${recordsInfo.size} 条 Record"
+                                    else
+                                        "Shizuku 特权未就绪 · 点击侧栏管理",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                    }
-
-                    // ── 2. NDEF 负载配置与切换卡片 ──
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "进入抽屉切换",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // ── 简约卡片 2：极简执行动态控制台条（点击进入抽屉查看完整控制台） ──
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp)
+                        .clickable { isSidebarOpen = true },
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.50f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "NDEF 目标负载选择",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "系统注入动态",
+                                style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(Modifier.height(10.dp))
-
-                            // 4 种模式分段选择器
-                            val modes = listOf(
-                                PayloadMode.DEFAULT_ALIPAY to "支付宝 axdk",
-                                PayloadMode.ASSET_FILE to "小元宝提取",
-                                PayloadMode.LOCAL_FILE to "本地文件",
-                                PayloadMode.CUSTOM_HEX to "HEX 字节"
+                            Text(
+                                text = "查看详细日志 ❯",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
                             )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                modes.forEach { (mode, title) ->
-                                    val isSelected = selectedMode == mode
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(
-                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                                else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-                                            )
-                                            .border(
-                                                width = if (isSelected) 1.5.dp else 0.5.dp,
-                                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                                shape = RoundedCornerShape(12.dp)
-                                            )
-                                            .clickable { selectedMode = mode }
-                                            .padding(vertical = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            val recentLogs = logs.takeLast(2)
+                            if (recentLogs.isEmpty()) {
+                                Text(
+                                    text = "就绪.点击上方高光胶囊按钮开始模拟注入...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp
+                                )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    recentLogs.forEach { line ->
                                         Text(
-                                            text = title,
+                                            text = line,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontFamily = FontFamily.Monospace,
                                             fontSize = 11.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
                             }
-
-                            Spacer(Modifier.height(12.dp))
-
-                            // 本地文件选择入口
-                            if (selectedMode == PayloadMode.LOCAL_FILE) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = selectedFileName ?: "未选择文件",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    OutlinedButton(
-                                        onClick = { filePickerLauncher.launch("*/*") },
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                    ) {
-                                        Text("浏览选择 .ndef", fontSize = 12.sp)
-                                    }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                            }
-
-                            // 自定义 HEX 输入框
-                            if (selectedMode == PayloadMode.CUSTOM_HEX) {
-                                OutlinedTextField(
-                                    value = customHexInput,
-                                    onValueChange = { customHexInput = it },
-                                    label = { Text("输入 NDEF 二进制十六进制字符串 (Hex)") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                    placeholder = { Text("如: D1012C5402656E...") },
-                                    maxLines = 3
-                                )
-                                Spacer(Modifier.height(8.dp))
-                            }
-
-                            // 负载 Records 详细解析信息
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
-                                    .padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = "当前解析负载 (包含 ${recordsInfo.size} 条 Record):",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                recordsInfo.forEach { recordLine ->
-                                    Text(
-                                        text = recordLine,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 11.sp,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
                         }
                     }
+                }
 
-                    // ── 3. 实时日志控制台卡片 ──
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(14.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "系统注入控制台日志",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Row {
-                                    TextButton(
-                                        onClick = { logs.clear() },
-                                        contentPadding = PaddingValues(horizontal = 8.dp)
-                                    ) {
-                                        Text("清空", fontSize = 12.sp)
-                                    }
-                                    TextButton(
-                                        onClick = {
-                                            val full = logs.joinToString("\n")
-                                            clipboardManager.setText(AnnotatedString(full))
-                                            Toast.makeText(context, "已复制全部日志", Toast.LENGTH_SHORT).show()
-                                        },
-                                        contentPadding = PaddingValues(horizontal = 8.dp)
-                                    ) {
-                                        Text("复制", fontSize = 12.sp)
-                                    }
-                                }
-                            }
+                Spacer(modifier = Modifier.height(36.dp))
+            }
+        }
 
-                            Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
-
-                            LazyColumn(
-                                state = logListState,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                if (logs.isEmpty()) {
-                                    item {
-                                        Text(
-                                            text = "就绪。点击上方高光胶囊按钮开始模拟注入...",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontFamily = FontFamily.Monospace,
-                                            modifier = Modifier.padding(top = 16.dp)
-                                        )
-                                    }
-                                } else {
-                                    items(logs) { log ->
-                                        Text(
-                                            text = log,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 12.sp,
-                                            modifier = Modifier.padding(vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
+        // ── 左侧毛玻璃抽屉 (GlassSidebarBox) 收纳所有设置与负载配置 ──
+        GlassSidebarBox(
+            visible = isSidebarOpen,
+            onDismiss = { isSidebarOpen = false },
+            hazeState = hazeState
+        ) {
+            // 抽屉头部
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "功能与负载配置",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                TextButton(onClick = { isSidebarOpen = false }) {
+                    Text("完成")
                 }
             }
+
+            Spacer(Modifier.height(14.dp))
+
+            // ── 1. NDEF 负载目标配置 ──
+            Text(
+                text = "NDEF 目标负载选择",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+
+            val modes = listOf(
+                PayloadMode.DEFAULT_ALIPAY to "支付宝 axdk",
+                PayloadMode.ASSET_FILE to "小元宝提取",
+                PayloadMode.LOCAL_FILE to "本地文件",
+                PayloadMode.CUSTOM_HEX to "HEX 字节"
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                modes.chunked(2).forEach { rowModes ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        rowModes.forEach { (mode, title) ->
+                            val isSelected = selectedMode == mode
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+                                    )
+                                    .border(
+                                        width = if (isSelected) 1.5.dp else 0.5.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { selectedMode = mode }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = title,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // 本地文件选择入口
+            if (selectedMode == PayloadMode.LOCAL_FILE) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = selectedFileName ?: "未选择文件",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    OutlinedButton(
+                        onClick = { filePickerLauncher.launch("*/*") },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text("选择 .ndef", fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            // 自定义 HEX 输入框
+            if (selectedMode == PayloadMode.CUSTOM_HEX) {
+                OutlinedTextField(
+                    value = customHexInput,
+                    onValueChange = { customHexInput = it },
+                    label = { Text("输入 16 进制字符串") },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    placeholder = { Text("如: D1012C5402656E...") },
+                    maxLines = 3
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
+            // 负载 Records 详细解析信息
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "解析结果 (${recordsInfo.size} 条 Record):",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                recordsInfo.forEach { recordLine ->
+                    Text(
+                        text = recordLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(14.dp))
+
+            // ── 2. 系统控制台实时日志 ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "控制台日志",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Row {
+                    TextButton(
+                        onClick = { logs.clear() },
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text("清空", fontSize = 12.sp)
+                    }
+                    TextButton(
+                        onClick = {
+                            val full = logs.joinToString("\n")
+                            clipboardManager.setText(AnnotatedString(full))
+                            Toast.makeText(context, "已复制全部日志", Toast.LENGTH_SHORT).show()
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp)
+                    ) {
+                        Text("复制", fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                    .padding(8.dp)
+            ) {
+                LazyColumn(
+                    state = logListState,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    if (logs.isEmpty()) {
+                        item {
+                            Text(
+                                text = "等待触发 NFC 模拟事件...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                        }
+                    } else {
+                        items(logs) { log ->
+                            Text(
+                                text = log,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(14.dp))
+
+            // ── 3. 快捷操作 ──
+            Text(
+                text = "快捷选项与帮助",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        isSidebarOpen = false
+                        startupViewModel.replay()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(painterResource(id = R.drawable.refresh), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("重新播放快速入门引导")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        wallpaperPicker.launch("image/*")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("自定义毛玻璃壁纸")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        updateViewModel.checkManually { isNewAvailable, version ->
+                            Toast.makeText(
+                                context,
+                                if (isNewAvailable) "发现新版本: v$version" else "当前已是最新版 (v$version)",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(painterResource(id = R.drawable.outline_cloud_download_24), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("检查最新版本更新")
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
         }
 
         // ── 权限与 Shizuku 详情弹窗 ──
@@ -684,7 +820,7 @@ fun MainScreen(
                             text = "本程序通过 Shizuku Binder 机制获取系统 android.nfc.INfcAdapter 特权服务，并模拟真实物理卡片（Tech: NFC_A 0x01, NDEF 0x06）的插入派发。",
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Divider()
+                        HorizontalDivider()
                         Text("• 服务状态: " + if (isShizukuRunning) "正在运行 (v$shizukuVersion)" else "未运行")
                         Text("• 授权状态: " + if (isShizukuPermissionGranted) "已获得 UID 2000 授权" else "未授权")
                         Text("• 隐藏 API: 已通过 HiddenApiBypass 全局豁免限制")

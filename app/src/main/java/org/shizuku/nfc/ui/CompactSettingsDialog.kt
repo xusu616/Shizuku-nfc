@@ -14,7 +14,7 @@ import androidx.compose.ui.window.Dialog
 
 /**
  * 紧凑型弹窗基类（完全仿照 shizuku-ftp/CompactSettingsDialog），
- * 保证在小屏幕或大字体模式下，正文可垂直滑动，底部按钮始终可点击。
+ * 保证在小屏幕或大字体模式下，正文可垂直滑动，底部按钮始终可点击
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

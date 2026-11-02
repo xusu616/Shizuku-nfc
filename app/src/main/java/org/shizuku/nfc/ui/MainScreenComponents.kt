@@ -400,7 +400,7 @@ fun NarrowWallpaperRail(
     currentTime: Long,
     batteryState: BatteryState,
     gearRotation: Float = 0f,
-    onSettingsClick: () -> Unit,
+    onOpenSidebar: () -> Unit = {},
     onReplayGuideClick: () -> Unit,
     onUpdateClick: () -> Unit,
     onShizukuCardClick: () -> Unit,
@@ -442,10 +442,21 @@ fun NarrowWallpaperRail(
 
             Spacer(modifier = Modifier.weight(1f))
 
+            // 抽屉设置按钮 (Gear) -> 打开 GlassSidebarBox
+            MenuButton(
+                iconRes = R.drawable.gear,
+                rotation = gearRotation,
+                onClick = onOpenSidebar,
+                colorBag = colorBag,
+                useM3Color = useM3Color,
+                contentDescription = "设置与负载抽屉"
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
             // 重新引导按钮 (Guide Replay)
             MenuButton(
                 iconRes = R.drawable.refresh,
-                rotation = gearRotation,
+                rotation = 0f,
                 onClick = onReplayGuideClick,
                 colorBag = colorBag,
                 useM3Color = useM3Color,
