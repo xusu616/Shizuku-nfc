@@ -1,27 +1,30 @@
 package org.shizuku.nfc.ui
 
+import android.app.Application
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,12 +35,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,22 +70,20 @@ fun MainScreen(
     isShizukuPermissionGranted: Boolean = true,
     shizukuVersion: Int = 13,
     onRequestPermission: () -> Unit = {},
-    previewColorBag: ColorBag? = null
+    previewColorBag: ColorBag? = null,
+    startupViewModel: StartupViewModel? = if (LocalInspectionMode.current) null else viewModel(),
+    updateViewModel: UpdatePromptViewModel? = if (LocalInspectionMode.current) null else viewModel()
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val clipboardManager = LocalClipboardManager.current
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
-
-    // 引导与更新 ViewModel（完全对齐 shizuku-ftp 架构）
-    val startupViewModel: StartupViewModel = viewModel()
-    val updateViewModel: UpdatePromptViewModel = viewModel()
 
     var startupReady by remember { mutableStateOf(false) }
 
-    // 弹窗与抽屉状态
+    // 抽屉与路由状态（完全对齐 shizuku-ftp 侧栏路由架构）
+    val sideMenuState = rememberSideMenuState()
+
     var showShizukuDialog by remember { mutableStateOf(false) }
-    var isSidebarOpen by remember { mutableStateOf(false) }
     var railVisible by remember { mutableStateOf(true) }
     var isDispatching by remember { mutableStateOf(false) }
 
@@ -135,17 +134,6 @@ fun MainScreen(
             if (logs.isNotEmpty()) {
                 logListState.animateScrollToItem(logs.size - 1)
             }
-        }
-    }
-
-    // 文件选择器
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            selectedFileUri = uri
-            selectedFileName = uri.lastPathSegment ?: "custom.ndef"
-            appendLog("已选择本地 NDEF: $selectedFileName")
         }
     }
 
@@ -222,7 +210,7 @@ fun MainScreen(
             PayloadMode.DEFAULT_ALIPAY -> "支付宝碰一下 (axdk 官方)"
             PayloadMode.ASSET_FILE -> "小元宝提取包 (xiaoyuanpao)"
             PayloadMode.LOCAL_FILE -> "本地文件: ${selectedFileName ?: "未选择"}"
-            PayloadMode.CUSTOM_HEX -> "自定义 HEX 二进制字节流"
+            PayloadMode.CUSTOM_HEX -> "自定义 HEX 16 进制字节流"
         }
     }
 
@@ -269,6 +257,7 @@ fun MainScreen(
 
     // 毛玻璃与动画参数
     val hazeState = rememberHazeState()
+    val sidebarBackdrop = rememberGlassBackdrop()
     val colorBag = previewColorBag ?: ColorBag()
 
     val railPadding by animateDpAsState(
@@ -280,14 +269,17 @@ fun MainScreen(
         label = "BarVisibleRotation"
     )
     val gearRotation by animateFloatAsState(
-        targetValue = if (isSidebarOpen) 180f else 0f,
+        targetValue = if (sideMenuState.isOpen) 180f else 0f,
         label = "GearRotation"
     )
     val cornerRadius = getRadius()
 
     // ── 外层全屏容器 ──
     Box(modifier = Modifier.fillMaxSize()) {
-        // 壁纸采样图层 (Haze Source)
+        // 1. 底层真实壁纸（参考 commit 7ae6ff86：动画挂载时 source layer 可能失效，必须打底保底，永不露黑底）
+        WallpaperBase(wallpaperBitmap = customWallpaperBitmap)
+
+        // 2. 独立采样图层（参考 commit 17b9074c：独立 RenderNode 避免兄弟组件重绘时清空 Haze 采样）
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -297,7 +289,7 @@ fun MainScreen(
             WallpaperBase(wallpaperBitmap = customWallpaperBitmap)
         }
 
-        // 全局毛玻璃磨砂覆盖层
+        // 3. 全局毛玻璃磨砂覆盖层
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -311,7 +303,14 @@ fun MainScreen(
                 )
         )
 
-        // ── 左侧窄边栏 (NarrowWallpaperRail) ──
+        // 4. 侧栏专用固定尺寸背景捕获（参考 commit 50a87c25：始终在主界面坐标生成，记录到 GraphicsLayer，抽屉展开时零着色器重建，杜绝闪烁）
+        CaptureGlassBackdrop(
+            backdrop = sidebarBackdrop,
+            hazeState = hazeState,
+            blurIntensity = 25f,
+        )
+
+        // ── 左侧窄边栏 (NarrowWallpaperRail) 严格保持 3 大标准按钮 ──
         AnimatedVisibility(
             visible = railVisible,
             enter = slideInHorizontally(
@@ -328,486 +327,265 @@ fun MainScreen(
                 currentTime = currentTime,
                 batteryState = batteryState,
                 gearRotation = gearRotation,
-                onOpenSidebar = { isSidebarOpen = !isSidebarOpen },
-                onReplayGuideClick = { startupViewModel.replay() },
-                onUpdateClick = {
-                    updateViewModel.checkManually { isNewAvailable, version ->
-                        if (!isNewAvailable) {
-                            Toast.makeText(context, "当前已是最新版本 (v$version)", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
-                onShizukuCardClick = { showShizukuDialog = true },
+                onGearClick = { sideMenuState.open(SideMenu.SETTINGS) },
+                onLinkClick = { sideMenuState.open(SideMenu.TOOLS) },
+                onShowCardClick = { showShizukuDialog = true },
                 modifier = Modifier.fillMaxHeight(),
                 colorBag = colorBag,
                 useM3Color = colorBag.useM3Color
             )
         }
 
-        // ── 主内容面板容器 (极简简约风格，所有复杂配置收缩至抽屉) ──
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(start = railPadding)
-                .clip(RoundedCornerShape(topStart = cornerRadius, bottomStart = cornerRadius))
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            MainHeroLayout(
-                wallpaperBitmap = customWallpaperBitmap,
-                topBarPressedDown = true,
-                onWallpaperLongPress = { wallpaperPicker.launch("image/*") }
-            ) {
-                // 顶部控制行：折叠侧栏 + 居中高光碰一下胶囊按钮 + 打开设置抽屉入口
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    GlassBackgroundToggleButton(
-                        enabled = railVisible,
-                        onClick = { railVisible = !railVisible },
-                        rotation = barVisibleRotation,
-                        colorBag = colorBag,
-                        useOriginColor = colorBag.useM3Color
-                    )
-
-                    Spacer(modifier = Modifier.weight(0.1f))
-
-                    // 核心碰一下胶囊按钮 (ServerControlButton 风格)
-                    ServerControlButton(
-                        isExecuting = isDispatching,
-                        onClick = { doTriggerTouch() }
-                    )
-
-                    Spacer(modifier = Modifier.weight(0.1f))
-
-                    // 设置与负载配置抽屉展开按钮 (Gear)
-                    FilledTonalIconButton(
-                        onClick = { isSidebarOpen = true },
-                        modifier = Modifier.size(48.dp),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.gear),
-                            contentDescription = "打开设置与负载抽屉",
-                            modifier = Modifier
-                                .size(24.dp)
-                                .rotate(gearRotation)
-                        )
+        // ── 侧栏及响应式多端布局框架 (完全对齐 shizuku-ftp/SideMenuLayout) ──
+        SideMenuLayout(
+            state = sideMenuState,
+            railPadding = railPadding,
+            backdrop = sidebarBackdrop,
+            colorBag = colorBag,
+            onNavigate = { route ->
+                when (route) {
+                    "guide" -> {
+                        sideMenuState.close()
+                        startupViewModel?.replay()
                     }
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // ── 简约卡片 1：当前活跃 NDEF 负载与 Shizuku 状态胶囊条 ──
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp)
-                        .clickable { isSidebarOpen = true },
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .background(
-                                        if (isShizukuRunning && isShizukuPermissionGranted) Color(0xFF4CAF50)
-                                        else MaterialTheme.colorScheme.error,
-                                        CircleShape
-                                    )
-                            )
-                            Column {
-                                Text(
-                                    text = currentModeTitle,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = if (isShizukuRunning && isShizukuPermissionGranted)
-                                        "UID 2000 就绪 · 包含 ${recordsInfo.size} 条 Record"
-                                    else
-                                        "Shizuku 特权未就绪 · 点击侧栏管理",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = "进入抽屉切换",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // ── 简约卡片 2：极简执行动态控制台条（点击进入抽屉查看完整控制台） ──
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp)
-                        .clickable { isSidebarOpen = true },
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.50f)
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "系统注入动态",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "查看详细日志 ❯",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                        ) {
-                            val recentLogs = logs.takeLast(2)
-                            if (recentLogs.isEmpty()) {
-                                Text(
-                                    text = "就绪.点击上方高光胶囊按钮开始模拟注入...",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 12.sp
-                                )
-                            } else {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    recentLogs.forEach { line ->
-                                        Text(
-                                            text = line,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(36.dp))
-            }
-        }
-
-        // ── 左侧毛玻璃抽屉 (GlassSidebarBox) 收纳所有设置与负载配置 ──
-        GlassSidebarBox(
-            visible = isSidebarOpen,
-            onDismiss = { isSidebarOpen = false },
-            hazeState = hazeState
-        ) {
-            // 抽屉头部
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "功能与负载配置",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                TextButton(onClick = { isSidebarOpen = false }) {
-                    Text("完成")
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            // ── 1. NDEF 负载目标配置 ──
-            Text(
-                text = "NDEF 目标负载选择",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
-
-            val modes = listOf(
-                PayloadMode.DEFAULT_ALIPAY to "支付宝 axdk",
-                PayloadMode.ASSET_FILE to "小元宝提取",
-                PayloadMode.LOCAL_FILE to "本地文件",
-                PayloadMode.CUSTOM_HEX to "HEX 字节"
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                modes.chunked(2).forEach { rowModes ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowModes.forEach { (mode, title) ->
-                            val isSelected = selectedMode == mode
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                        else MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-                                    )
-                                    .border(
-                                        width = if (isSelected) 1.5.dp else 0.5.dp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                    .clickable { selectedMode = mode }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = title,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            // 本地文件选择入口
-            if (selectedMode == PayloadMode.LOCAL_FILE) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = selectedFileName ?: "未选择文件",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    OutlinedButton(
-                        onClick = { filePickerLauncher.launch("*/*") },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                    ) {
-                        Text("选择 .ndef", fontSize = 12.sp)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // 自定义 HEX 输入框
-            if (selectedMode == PayloadMode.CUSTOM_HEX) {
-                OutlinedTextField(
-                    value = customHexInput,
-                    onValueChange = { customHexInput = it },
-                    label = { Text("输入 16 进制字符串") },
-                    modifier = Modifier.fillMaxWidth(),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    placeholder = { Text("如: D1012C5402656E...") },
-                    maxLines = 3
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // 负载 Records 详细解析信息
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = "解析结果 (${recordsInfo.size} 条 Record):",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                recordsInfo.forEach { recordLine ->
-                    Text(
-                        text = recordLine,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(Modifier.height(14.dp))
-
-            // ── 2. 系统控制台实时日志 ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "控制台日志",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Row {
-                    TextButton(
-                        onClick = { logs.clear() },
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Text("清空", fontSize = 12.sp)
-                    }
-                    TextButton(
-                        onClick = {
-                            val full = logs.joinToString("\n")
-                            clipboardManager.setText(AnnotatedString(full))
-                            Toast.makeText(context, "已复制全部日志", Toast.LENGTH_SHORT).show()
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp)
-                    ) {
-                        Text("复制", fontSize = 12.sp)
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(160.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                    .padding(8.dp)
-            ) {
-                LazyColumn(
-                    state = logListState,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    if (logs.isEmpty()) {
-                        item {
-                            Text(
-                                text = "等待触发 NFC 模拟事件...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        }
-                    } else {
-                        items(logs) { log ->
-                            Text(
-                                text = log,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(vertical = 1.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(Modifier.height(14.dp))
-
-            // ── 3. 快捷操作 ──
-            Text(
-                text = "快捷选项与帮助",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        isSidebarOpen = false
-                        startupViewModel.replay()
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(painterResource(id = R.drawable.refresh), contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("重新播放快速入门引导")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        wallpaperPicker.launch("image/*")
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("自定义毛玻璃壁纸")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        updateViewModel.checkManually { isNewAvailable, version ->
+                    "update" -> {
+                        updateViewModel?.checkManually { isNewAvailable, version ->
                             Toast.makeText(
                                 context,
                                 if (isNewAvailable) "发现新版本: v$version" else "当前已是最新版 (v$version)",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                    }
+                    "wallpaper" -> {
+                        sideMenuState.close()
+                        wallpaperPicker.launch("image/*")
+                    }
+                }
+            },
+            mainContent = { mainStartPadding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(start = mainStartPadding)
+                        .clip(RoundedCornerShape(topStart = cornerRadius, bottomStart = cornerRadius))
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
-                    Icon(painterResource(id = R.drawable.outline_cloud_download_24), contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("检查最新版本更新")
+                    MainHeroLayout(
+                        wallpaperBitmap = customWallpaperBitmap,
+                        topBarPressedDown = true,
+                        heroHeight = 380.dp,
+                        onWallpaperLongPress = { wallpaperPicker.launch("image/*") }
+                    ) {
+                        // 顶部控制行：折叠侧栏 + 居中高光碰一下胶囊按钮 + 工具快捷按钮
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            GlassBackgroundToggleButton(
+                                enabled = railVisible,
+                                onClick = { railVisible = !railVisible },
+                                rotation = barVisibleRotation,
+                                colorBag = colorBag,
+                                useOriginColor = colorBag.useM3Color
+                            )
+
+                            Spacer(modifier = Modifier.weight(0.1f))
+
+                            // 核心碰一下胶囊按钮 (ServerControlButton 风格)
+                            ServerControlButton(
+                                isExecuting = isDispatching,
+                                onClick = { doTriggerTouch() }
+                            )
+
+                            Spacer(modifier = Modifier.weight(0.1f))
+
+                            // 工具快捷按钮 (Link)
+                            FilledTonalIconButton(
+                                onClick = { sideMenuState.open(SideMenu.TOOLS) },
+                                modifier = Modifier.size(48.dp),
+                                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.link),
+                                    contentDescription = "打开功能与工具",
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .rotate(gearRotation),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(36.dp))
+
+                        // ── 简约分散卡片 1：当前活跃 NDEF 负载与 Shizuku 状态胶囊条 ──
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .clickable {
+                                    sideMenuState.open(SideMenu.TOOLS)
+                                    sideMenuState.showDetail("payload")
+                                },
+                            shape = RoundedCornerShape(22.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .background(
+                                                if (isShizukuRunning && isShizukuPermissionGranted) Color(0xFF4CAF50)
+                                                else MaterialTheme.colorScheme.error,
+                                                CircleShape
+                                            )
+                                    )
+                                    Column {
+                                        Text(
+                                            text = currentModeTitle,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (isShizukuRunning && isShizukuPermissionGranted)
+                                                "UID 2000 就绪 · 包含 ${recordsInfo.size} 条 Record"
+                                            else
+                                                "Shizuku 特权未就绪 · 点击侧栏管理",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = "进入独立负载配置页面",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(22.dp))
+
+                        // ── 简约分散卡片 2：极简执行动态条（点击直达独立全屏控制台页面） ──
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .clickable {
+                                    sideMenuState.open(SideMenu.TOOLS)
+                                    sideMenuState.showDetail("logs")
+                                },
+                            shape = RoundedCornerShape(22.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.50f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "最新执行动态",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "独立控制台 ❯",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
+                                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                                ) {
+                                    val lastLog = logs.lastOrNull()
+                                    Text(
+                                        text = lastLog ?: "就绪。点击上方高光胶囊按钮开始模拟注入...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (lastLog != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(48.dp))
+                    }
+                }
+            },
+            detailContent = { route, expanded, onBack ->
+                when (route) {
+                    "logs" -> LogsDestinationScreen(
+                        logs = logs,
+                        logListState = logListState,
+                        onClearLogs = { logs.clear() },
+                        onBack = onBack
+                    )
+                    "payload" -> PayloadDestinationScreen(
+                        selectedMode = selectedMode,
+                        onModeChange = { selectedMode = it },
+                        customHex = customHexInput,
+                        onHexChange = { customHexInput = it },
+                        selectedFileName = selectedFileName,
+                        onSelectFileUri = { uri, name ->
+                            selectedFileUri = uri
+                            selectedFileName = name
+                            appendLog("已选择本地 NDEF: $name")
+                        },
+                        recordsInfo = recordsInfo,
+                        onBack = onBack
+                    )
+                    "shizuku" -> ShizukuDestinationScreen(
+                        isShizukuRunning = isShizukuRunning,
+                        isShizukuPermissionGranted = isShizukuPermissionGranted,
+                        shizukuVersion = shizukuVersion,
+                        onRequestPermission = onRequestPermission,
+                        onBack = onBack
+                    )
+                    "about" -> AboutDestinationScreen(
+                        onBack = onBack
+                    )
                 }
             }
-
-            Spacer(Modifier.height(20.dp))
-        }
+        )
 
         // ── 权限与 Shizuku 详情弹窗 ──
         if (showShizukuDialog) {
@@ -846,7 +624,7 @@ fun MainScreen(
         }
 
         // ── 欢迎引导与更新弹窗（保持与 shizuku-ftp 一致的级联触发逻辑） ──
-        if (!LocalInspectionMode.current) {
+        if (!LocalInspectionMode.current && startupViewModel != null && updateViewModel != null) {
             StartupExperience(
                 state = startupViewModel,
                 onReady = { startupReady = true }
@@ -857,6 +635,35 @@ fun MainScreen(
             )
         }
     }
+}
+
+// ─── 预览专用的 Mock Application 与 ViewModel 构造器 ───
+
+/**
+ * 预览专用的 Mock Application，包装 Preview 环境下的 BridgeContext，安全支持 SharedPreferences
+ */
+class PreviewApplication(base: Context) : Application() {
+    init {
+        attachBaseContext(base)
+    }
+}
+
+/**
+ * 为 Preview 构造专用的 StartupViewModel
+ */
+@Composable
+fun rememberPreviewStartupViewModel(): StartupViewModel {
+    val context = LocalContext.current
+    return remember { StartupViewModel(PreviewApplication(context)) }
+}
+
+/**
+ * 为 Preview 构造专用的 UpdatePromptViewModel
+ */
+@Composable
+fun rememberPreviewUpdatePromptViewModel(): UpdatePromptViewModel {
+    val context = LocalContext.current
+    return remember { UpdatePromptViewModel(PreviewApplication(context)) }
 }
 
 // ─── 预览支持 ───
@@ -886,3 +693,19 @@ fun MainScreenPreviewDark() {
         )
     }
 }
+
+/**@Preview(name = "Main Screen with Mock ViewModel", showBackground = true)
+@Composable
+fun MainScreenPreviewWithViewModel() {
+    ShizukuNfcTheme(darkTheme = false) {
+        MainScreen(
+            isShizukuRunning = true,
+            isShizukuPermissionGranted = true,
+            shizukuVersion = 13,
+            onRequestPermission = {},
+            startupViewModel = rememberPreviewStartupViewModel(),
+            updateViewModel = rememberPreviewUpdatePromptViewModel()
+        )
+    }
+}
+**/

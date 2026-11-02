@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -78,6 +79,66 @@ fun MenuButton(
             colorFilter = ColorFilter.tint(
                 if (useM3Color) MaterialTheme.colorScheme.onSecondaryContainer else colorBag.darkMuted
             )
+        )
+    }
+}
+
+/**
+ * 侧栏列表点击行（复刻 shizuku-ftp/RowClick）
+ */
+@Composable
+fun RowClick(
+    icon: Any,
+    text: String,
+    onClick: () -> Unit,
+    colorBag: ColorBag = ColorBag(),
+    selected: Boolean = false,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (selected) {
+                    if (colorBag.useM3Color) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                    else colorBag.vibrant.copy(alpha = 0.20f)
+                } else Color.Transparent
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(if (colorBag.useM3Color) MaterialTheme.colorScheme.primary else colorBag.vibrant),
+            contentAlignment = Alignment.Center
+        ) {
+            when (icon) {
+                is ImageVector -> {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (colorBag.useM3Color) MaterialTheme.colorScheme.onPrimary else colorBag.darkMuted,
+                        modifier = Modifier.padding(9.dp)
+                    )
+                }
+                is Int -> {
+                    Icon(
+                        painter = painterResource(id = icon),
+                        contentDescription = null,
+                        tint = if (colorBag.useM3Color) MaterialTheme.colorScheme.onPrimary else colorBag.darkMuted,
+                        modifier = Modifier.padding(9.dp)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
         )
     }
 }
@@ -306,11 +367,12 @@ fun WallpaperBase(
 fun MainHeroLayout(
     wallpaperBitmap: ImageBitmap?,
     topBarPressedDown: Boolean = true,
+    heroHeight: androidx.compose.ui.unit.Dp = 380.dp,
     onWallpaperLongPress: () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val useBackgroundHero = maxWidth > maxHeight && maxHeight < 600.dp
+        val useBackgroundHero = maxWidth > maxHeight && maxHeight < 1600.dp
         if (useBackgroundHero) {
             MainHeroImage(
                 wallpaperBitmap = wallpaperBitmap,
@@ -329,7 +391,7 @@ fun MainHeroLayout(
 
             val heroModifier = Modifier
                 .fillMaxWidth()
-                .height(240.dp)
+                .height(heroHeight)
                 .pointerInput(Unit) {
                     detectTapGestures(onLongPress = { onWallpaperLongPress() })
                 }
@@ -339,7 +401,7 @@ fun MainHeroLayout(
                 MainHeroImage(wallpaperBitmap = wallpaperBitmap, modifier = heroModifier)
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             content()
         }
     }
@@ -393,17 +455,16 @@ private fun MainHeroImage(
 }
 
 /**
- * 左侧 YumeBox 风格半透明窄边栏
+ * 左侧 YumeBox 风格半透明窄边栏（严格对齐 shizuku-ftp：时钟、电量、设置、工具、权限 3 大按钮）
  */
 @Composable
 fun NarrowWallpaperRail(
     currentTime: Long,
     batteryState: BatteryState,
     gearRotation: Float = 0f,
-    onOpenSidebar: () -> Unit = {},
-    onReplayGuideClick: () -> Unit,
-    onUpdateClick: () -> Unit,
-    onShizukuCardClick: () -> Unit,
+    onGearClick: () -> Unit,
+    onLinkClick: () -> Unit,
+    onShowCardClick: () -> Unit,
     modifier: Modifier = Modifier,
     colorBag: ColorBag = ColorBag(),
     useM3Color: Boolean = colorBag.useM3Color
@@ -442,42 +503,31 @@ fun NarrowWallpaperRail(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 抽屉设置按钮 (Gear) -> 打开 GlassSidebarBox
+            // 1. 设置侧栏 (Gear)
             MenuButton(
                 iconRes = R.drawable.gear,
                 rotation = gearRotation,
-                onClick = onOpenSidebar,
+                onClick = onGearClick,
                 colorBag = colorBag,
                 useM3Color = useM3Color,
-                contentDescription = "设置与负载抽屉"
+                contentDescription = "系统与环境设置"
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // 重新引导按钮 (Guide Replay)
+            // 2. 工具与日志侧栏 (Link)
             MenuButton(
-                iconRes = R.drawable.refresh,
-                rotation = 0f,
-                onClick = onReplayGuideClick,
+                iconRes = R.drawable.link,
+                rotation = gearRotation,
+                onClick = onLinkClick,
                 colorBag = colorBag,
                 useM3Color = useM3Color,
-                contentDescription = "重新引导"
+                contentDescription = "工具与日志"
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // 检查更新按钮 (Check Updates)
-            MenuButton(
-                iconRes = R.drawable.outline_cloud_download_24,
-                rotation = 0f,
-                onClick = onUpdateClick,
-                colorBag = colorBag,
-                useM3Color = useM3Color,
-                contentDescription = "检查更新"
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // 权限 / Shizuku 状态卡片入口
+            // 3. 权限与状态卡片入口 (ShowCardButton)
             ShowCardButton(
-                onClick = onShizukuCardClick,
+                onClick = onShowCardClick,
                 colorBag = colorBag,
                 useM3Color = useM3Color
             )
