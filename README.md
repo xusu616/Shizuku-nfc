@@ -15,7 +15,7 @@
 - 本项目通过反射调用 `android.nfc.Tag.createMockTag(byte[] id, int[] techList, Bundle[] techExtras)` 构造合法虚拟标签：
   - `techList`: `TagTechnology.NFC_A (1)` 与 `TagTechnology.NDEF (6)`。
   - `techExtras`: NFC-A 注入 `sak (0x08)` 和 `atqa (0x44, 0x00)`；NDEF 注入 `ndefmsg` (`NdefMessage`)、`ndefmaxlength (1024)`、`ndefcardstate (2)`、`ndeftype (2)`。
-- 通过 Shizuku 包装的系统服务 Binder (`ShizukuBinderWrapper(SystemServiceHelper.getSystemService("nfc"))`) 反射调用 `INfcAdapter.dispatch(Tag)`，完成系统级 NFC 硬件刷卡事件注入，系统将自动打包完整带校验的 Intent 唤醒支付宝并跳转至小元宝/碰一下小程序！
+- 通过 Shizuku 包装的系统服务 Binder (`ShizukuBinderWrapper(SystemServiceHelper.getSystemService("nfc"))`) 反射调用 `INfcAdapter.dispatch(Tag)`，完成系统级 NFC 硬件刷卡事件注入，系统将自动打包完整带校验的 Intent 唤醒支付宝并跳转至约炮营/碰一下小程序！
 
 ---
 

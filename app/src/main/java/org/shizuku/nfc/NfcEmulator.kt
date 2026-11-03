@@ -148,23 +148,41 @@ object NfcEmulator {
     }
 
     /**
-     * 备用方案：通过 Context 直接发送带 EXTRA_TAG 与 EXTRA_NDEF_MESSAGES 的显式/隐式 Intent
+     * 显式 Intent 穿透方案（免 Shizuku / 免 Root）
+     * 通过 Context 直接发送带 EXTRA_TAG 与 EXTRA_NDEF_MESSAGES 的显式 NDEF_DISCOVERED Intent
      */
     fun dispatchViaIntentDirect(context: Context, tag: Tag, ndefMessage: NdefMessage, logger: (String) -> Unit): Result<Unit> {
         return runCatching {
-            logger("执行备用方案：构造显式 NDEF_DISCOVERED Intent...")
+            logger("1. 构造显式 NDEF_DISCOVERED Intent...")
             val firstRecord = ndefMessage.records.firstOrNull()
             val uri = firstRecord?.toUri()
 
             val intent = Intent(NfcAdapter.ACTION_NDEF_DISCOVERED).apply {
-                data = uri
+                if (uri != null) {
+                    data = uri
+                }
                 setPackage(DEFAULT_ALIPAY_PKG)
                 putExtra(NfcAdapter.EXTRA_TAG, tag)
                 putExtra(NfcAdapter.EXTRA_NDEF_MESSAGES, arrayOf<Parcelable>(ndefMessage))
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(intent)
-            logger("✓ 备用 Intent 发送完成！")
+            try {
+                logger("2. 正在显式调起目标应用 ($DEFAULT_ALIPAY_PKG)...")
+                context.startActivity(intent)
+                logger("✔ 显式 Intent 穿透发送成功！")
+            } catch (e: Exception) {
+                logger("显式直接唤醒遇到异常: ${e.message}，尝试备用 URI 唤醒...")
+                if (uri != null) {
+                    val viewIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                        setPackage(DEFAULT_ALIPAY_PKG)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(viewIntent)
+                    logger("✔ 已通过 URI 成功唤起支付宝碰一下页面！")
+                } else {
+                    throw e
+                }
+            }
         }
     }
 

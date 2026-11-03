@@ -66,4 +66,14 @@ object UiPreferences {
     fun setExperimentalHaze(prefs: SharedPreferences, value: Boolean) {
         prefs.edit { putBoolean(PREF_KEY_EXPERIMENTAL_HAZE, value) }
     }
+
+    const val PREF_KEY_USE_DIRECT_INTENT = "useDirectIntentPref"
+    const val DEFAULT_USE_DIRECT_INTENT = true
+
+    fun getUseDirectIntent(prefs: SharedPreferences): Boolean =
+        prefs.getBoolean(PREF_KEY_USE_DIRECT_INTENT, DEFAULT_USE_DIRECT_INTENT)
+
+    fun setUseDirectIntent(prefs: SharedPreferences, value: Boolean) {
+        prefs.edit { putBoolean(PREF_KEY_USE_DIRECT_INTENT, value) }
+    }
 }

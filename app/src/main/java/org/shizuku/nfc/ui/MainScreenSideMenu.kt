@@ -162,10 +162,10 @@ fun GearSideMenu(
                         Text("关闭")
                     }
 
-                    // 1. Shizuku 特权状态
+                    // 1. NFC 派发模式与 Shizuku 特权
                     RowClick(
                         icon = R.drawable.outline_fingerprint_24,
-                        text = "Shizuku 特权状态",
+                        text = "NFC 派发与特权",
                         selected = selectedRoute == "shizuku",
                         colorBag = colorBag,
                         onClick = { onMenuClick("shizuku") }

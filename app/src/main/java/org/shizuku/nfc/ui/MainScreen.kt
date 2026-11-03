@@ -201,46 +201,92 @@ fun MainScreen(
     val currentModeTitle = remember(selectedMode, selectedFileName) {
         when (selectedMode) {
             PayloadMode.DEFAULT_ALIPAY -> "支付宝碰一下 (axdk 官方)"
-            PayloadMode.ASSET_FILE -> "小元宝提取包 (xiaoyuanpao)"
+            PayloadMode.ASSET_FILE -> "约炮营提取包 (xiaoyuanpao)"
             PayloadMode.LOCAL_FILE -> "本地文件: ${selectedFileName ?: "未选择"}"
             PayloadMode.CUSTOM_HEX -> "自定义 HEX 16 进制字节流"
         }
     }
 
+    // 偏好设置状态（默认开启显式 Intent 穿透）
+    val useDirectIntent by (uiPreferencesViewModel?.useDirectIntent ?: flowOf(true)).collectAsState(true)
+
     // 核心碰一下模拟派发
     fun doTriggerTouch() {
-        if (!isShizukuRunning) {
-            Toast.makeText(context, "Shizuku 未运行，请先在 Shizuku App 中启动服务！", Toast.LENGTH_LONG).show()
-            appendLog("错误: Shizuku 服务未运行")
-            showShizukuDialog = true
-            return
-        }
-        if (!isShizukuPermissionGranted) {
-            Toast.makeText(context, "未获得 Shizuku 授权，请点击侧栏状态盾牌完成授权！", Toast.LENGTH_LONG).show()
-            appendLog("错误: Shizuku 未授权，正在拉起授权申请...")
-            onRequestPermission()
-            return
-        }
-
         coroutineScope.launch {
             isDispatching = true
-            appendLog(">>> 开始执行免 Root 碰一下事件模拟注入...")
             try {
                 val mockTag = NfcEmulator.createMockTag(currentNdefMessage)
-                appendLog("Mock Tag 构造成功 (Tech: NFC_A 0x01, NDEF 0x06)")
-                val result = NfcEmulator.dispatchNfcTagViaShizuku(mockTag) { logText ->
-                    appendLog(logText)
-                }
-                if (result.isSuccess) {
-                    Toast.makeText(context, "碰一下事件派发成功！已唤醒支付宝", Toast.LENGTH_SHORT).show()
+                if (!useDirectIntent) {
+                    if (!isShizukuRunning) {
+                        appendLog("提示: Shizuku 服务未启动，已自动开启显式 Intent 穿透模式...")
+                        uiPreferencesViewModel?.setUseDirectIntent(true)
+                        val result = NfcEmulator.dispatchViaIntentDirect(context, mockTag, currentNdefMessage) { logText ->
+                            appendLog(logText)
+                        }
+                        if (result.isSuccess) {
+                            Toast.makeText(context, "Shizuku 未启动，已自动开启显式 Intent 穿透！", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val err = result.exceptionOrNull()
+                            appendLog("显式 Intent 失败: ${err?.message}")
+                            Toast.makeText(context, "显式 Intent 失败: ${err?.message}", Toast.LENGTH_LONG).show()
+                        }
+                        return@launch
+                    }
+                    if (!isShizukuPermissionGranted) {
+                        appendLog("提示: Shizuku 权限未就绪，已自动开启显式 Intent 穿透模式...")
+                        uiPreferencesViewModel?.setUseDirectIntent(true)
+                        val result = NfcEmulator.dispatchViaIntentDirect(context, mockTag, currentNdefMessage) { logText ->
+                            appendLog(logText)
+                        }
+                        if (result.isSuccess) {
+                            Toast.makeText(context, "Shizuku 未授权，已自动开启显式 Intent 穿透！", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val err = result.exceptionOrNull()
+                            appendLog("显式 Intent 失败: ${err?.message}")
+                            Toast.makeText(context, "显式 Intent 失败: ${err?.message}", Toast.LENGTH_LONG).show()
+                        }
+                        return@launch
+                    }
+
+                    appendLog(">>> 开始执行免 Root 碰一下事件模拟注入 (Shizuku)...")
+                    appendLog("Mock Tag 构造成功 (Tech: NFC_A 0x01, NDEF 0x06)")
+                    val result = NfcEmulator.dispatchNfcTagViaShizuku(mockTag) { logText ->
+                        appendLog(logText)
+                    }
+                    if (result.isSuccess) {
+                        Toast.makeText(context, "碰一下事件派发成功！已唤醒支付宝", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val err = result.exceptionOrNull()
+                        appendLog("Shizuku 派发失败: ${err?.message}，正在自动开启显式 Intent 穿透...")
+                        uiPreferencesViewModel?.setUseDirectIntent(true)
+                        val fallbackResult = NfcEmulator.dispatchViaIntentDirect(context, mockTag, currentNdefMessage) { logText ->
+                            appendLog(logText)
+                        }
+                        if (fallbackResult.isSuccess) {
+                            Toast.makeText(context, "Shizuku 派发失败，已自动开启显式 Intent 穿透并唤起支付宝！", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val fallbackErr = fallbackResult.exceptionOrNull()
+                            appendLog("显式 Intent 失败: ${fallbackErr?.message}")
+                            Toast.makeText(context, "派发失败: ${fallbackErr?.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
                 } else {
-                    val err = result.exceptionOrNull()
-                    appendLog("派发失败: ${err?.message}")
-                    Toast.makeText(context, "派发失败: ${err?.message}", Toast.LENGTH_LONG).show()
+                    appendLog(">>> 模式：显式 Intent 穿透（免 Shizuku / 免 Root）...")
+                    val result = NfcEmulator.dispatchViaIntentDirect(context, mockTag, currentNdefMessage) { logText ->
+                        appendLog(logText)
+                    }
+                    if (result.isSuccess) {
+                        Toast.makeText(context, "显式 Intent 穿透成功！已调起支付宝", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val err = result.exceptionOrNull()
+                        appendLog("显式 Intent 失败: ${err?.message}")
+                        Toast.makeText(context, "显式 Intent 失败: ${err?.message}", Toast.LENGTH_LONG).show()
+                    }
                 }
             } catch (e: Throwable) {
-                appendLog("发生异常: ${e.message}")
-                Toast.makeText(context, "异常: ${e.message}", Toast.LENGTH_LONG).show()
+                appendLog("发生异常: ${e.message}，已自动开启显式 Intent 穿透...")
+                uiPreferencesViewModel?.setUseDirectIntent(true)
+                Toast.makeText(context, "异常: ${e.message}，已自动开启显式 Intent 穿透", Toast.LENGTH_LONG).show()
             } finally {
                 delay(600)
                 isDispatching = false
@@ -453,7 +499,8 @@ fun MainScreen(
                                         modifier = Modifier
                                             .size(12.dp)
                                             .background(
-                                                if (isShizukuRunning && isShizukuPermissionGranted) Color(0xFF4CAF50)
+                                                if (useDirectIntent) Color(0xFF2196F3)
+                                                else if (isShizukuRunning && isShizukuPermissionGranted) Color(0xFF4CAF50)
                                                 else MaterialTheme.colorScheme.error,
                                                 CircleShape
                                             )
@@ -467,7 +514,9 @@ fun MainScreen(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = if (isShizukuRunning && isShizukuPermissionGranted)
+                                            text = if (useDirectIntent)
+                                                "显式 Intent 穿透就绪 (免 Shizuku) · ${recordsInfo.size} 条 Record"
+                                            else if (isShizukuRunning && isShizukuPermissionGranted)
                                                 "UID 2000 就绪 · 包含 ${recordsInfo.size} 条 Record"
                                             else
                                                 "Shizuku 特权未就绪 · 点击侧栏管理",
@@ -508,6 +557,9 @@ fun MainScreen(
                             appendLog("已选择本地 NDEF: $name")
                         },
                         recordsInfo = recordsInfo,
+                        useDirectIntent = useDirectIntent,
+                        onUseDirectIntentChange = { uiPreferencesViewModel?.setUseDirectIntent(it) },
+                        colorBag = colorBag,
                         onBack = onBack
                     )
                     "ui_settings" -> UiSettingsDestinationScreen(
@@ -519,6 +571,8 @@ fun MainScreen(
                         isShizukuRunning = isShizukuRunning,
                         isShizukuPermissionGranted = isShizukuPermissionGranted,
                         shizukuVersion = shizukuVersion,
+                        uiPreferencesViewModel = uiPreferencesViewModel,
+                        colorBag = colorBag,
                         onRequestPermission = onRequestPermission,
                         onBack = onBack
                     )
@@ -541,6 +595,7 @@ fun MainScreen(
                             style = MaterialTheme.typography.bodyMedium
                         )
                         HorizontalDivider()
+                        Text("• 派发模式: " + if (useDirectIntent) "显式 Intent 穿透 (免 Shizuku)" else "Shizuku 系统级 NFC 注入")
                         Text("• 服务状态: " + if (isShizukuRunning) "正在运行 (v$shizukuVersion)" else "未运行")
                         Text("• 授权状态: " + if (isShizukuPermissionGranted) "已获得 UID 2000 授权" else "未授权")
                         Text("• 隐藏 API: 已通过 HiddenApiBypass 全局豁免限制")

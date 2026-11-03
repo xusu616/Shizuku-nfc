@@ -98,4 +98,18 @@ class UiPreferencesViewModel(application: Application) : AndroidViewModel(applic
 
     fun getExperimentalHaze(): Boolean =
         UiPreferences.getExperimentalHaze(prefs)
+
+    // 7. 使用显式 Intent 穿透（免 Shizuku）
+    private val _useDirectIntent = MutableStateFlow(
+        UiPreferences.getUseDirectIntent(prefs)
+    )
+    val useDirectIntent = _useDirectIntent.asStateFlow()
+
+    fun setUseDirectIntent(value: Boolean) {
+        UiPreferences.setUseDirectIntent(prefs, value)
+        _useDirectIntent.value = value
+    }
+
+    fun getUseDirectIntent(): Boolean =
+        UiPreferences.getUseDirectIntent(prefs)
 }

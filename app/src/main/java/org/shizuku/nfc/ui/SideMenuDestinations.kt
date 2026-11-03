@@ -135,6 +135,9 @@ fun PayloadDestinationScreen(
     selectedFileName: String?,
     onSelectFileUri: (Uri, String) -> Unit,
     recordsInfo: List<String>,
+    useDirectIntent: Boolean = false,
+    onUseDirectIntentChange: (Boolean) -> Unit = {},
+    colorBag: ColorBag = ColorBag(),
     onBack: () -> Unit
 ) {
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -165,6 +168,7 @@ fun PayloadDestinationScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -177,7 +181,7 @@ fun PayloadDestinationScreen(
 
             val modes = listOf(
                 PayloadMode.DEFAULT_ALIPAY to "支付宝碰一下 (axdk 官方)",
-                PayloadMode.ASSET_FILE to "小元宝提取包 (xiaoyuanpao.ndef)",
+                PayloadMode.ASSET_FILE to "约炮营提取包 (xiaoyuanpao.ndef)",
                 PayloadMode.LOCAL_FILE to "本地自定义 .ndef 文件",
                 PayloadMode.CUSTOM_HEX to "自定义 HEX 16 进制字节串"
             )
@@ -288,6 +292,36 @@ fun PayloadDestinationScreen(
                     }
                 }
             }
+
+            // 派发模式选择卡片（显式 Intent 穿透 / Shizuku 系统注入）
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "模拟派发模式",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    SwitchPrefRow(
+                        title = "使用显式 Intent 穿透",
+                        description = "无需 Shizuku 或 Root 特权，直接通过携带 NDEF 的显式 Intent 唤起支付宝；关闭则通过 Shizuku 注入系统底层 NFC 硬件事件",
+                        checked = useDirectIntent,
+                        colorBag = colorBag,
+                        onCheckedChange = onUseDirectIntentChange
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
@@ -301,13 +335,20 @@ fun ShizukuDestinationScreen(
     isShizukuRunning: Boolean,
     isShizukuPermissionGranted: Boolean,
     shizukuVersion: Int,
+    uiPreferencesViewModel: UiPreferencesViewModel? = null,
+    colorBag: ColorBag = ColorBag(),
     onRequestPermission: () -> Unit,
     onBack: () -> Unit
 ) {
+    val prefs = LocalContext.current.getSharedPreferences("ui_state", android.content.Context.MODE_PRIVATE)
+    var useDirectIntent by remember {
+        mutableStateOf(uiPreferencesViewModel?.getUseDirectIntent() ?: UiPreferences.getUseDirectIntent(prefs))
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Shizuku 免 Root 特权", fontWeight = FontWeight.Bold) },
+                title = { Text("NFC 派发与特权设置", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -323,9 +364,41 @@ fun ShizukuDestinationScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 1. NFC 派发模式卡片
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "派发模式选择",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    SwitchPrefRow(
+                        title = "使用显式 Intent 穿透",
+                        description = "开启后无需 Shizuku 或 Root 特权，直接通过携带 NDEF 的显式 Intent 唤起支付宝；关闭则通过 Shizuku 注入系统底层 NFC 硬件事件",
+                        checked = useDirectIntent,
+                        colorBag = colorBag,
+                        onCheckedChange = { checked ->
+                            useDirectIntent = checked
+                            uiPreferencesViewModel?.setUseDirectIntent(checked)
+                        }
+                    )
+                }
+            }
+
+            // 2. Shizuku 系统特权状态卡片
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -337,6 +410,11 @@ fun ShizukuDestinationScreen(
                         .padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Text(
+                        text = "Shizuku 系统特权状态",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -351,12 +429,12 @@ fun ShizukuDestinationScreen(
                         )
                         Text(
                             text = if (isShizukuRunning) "服务正在运行 (v$shizukuVersion)" else "服务未启动",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                     }
                     Text(
-                        text = if (isShizukuPermissionGranted) "已获得 UID 2000 (Shell) 权限，允许向系统 NFC 适配器派发虚拟 Tag" else "尚未授权 UID 2000 权限",
+                        text = if (isShizukuPermissionGranted) "已获得 UID 2000 (Shell) 权限，允许向系统 NFC 适配器派发虚拟 Tag" else "尚未授权 UID 2000 权限（若使用显式 Intent 穿透可免授权）",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -385,6 +463,15 @@ fun ShizukuDestinationScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutDestinationScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val versionName = remember {
+        try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.1.0"
+        } catch (_: Exception) {
+            "1.1.0"
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -404,6 +491,7 @@ fun AboutDestinationScreen(onBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -423,7 +511,7 @@ fun AboutDestinationScreen(onBack: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "版本 1.0.0 (免 Root 碰一下模拟器)",
+                text = "版本 $versionName (免 Root 碰一下模拟器)",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -433,6 +521,7 @@ fun AboutDestinationScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(Modifier.height(32.dp))
         }
     }
 }

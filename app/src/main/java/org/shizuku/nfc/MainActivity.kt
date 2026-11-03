@@ -45,6 +45,9 @@ class MainActivity : ComponentActivity() {
         isShizukuRunning = false
         isShizukuPermissionGranted = false
         shizukuVersion = -1
+        if (!uiPreferencesViewModel.getUseDirectIntent()) {
+            uiPreferencesViewModel.setUseDirectIntent(true)
+        }
     }
 
     private val requestPermissionResultListener =
@@ -159,6 +162,9 @@ class MainActivity : ComponentActivity() {
         } else {
             isShizukuPermissionGranted = false
             shizukuVersion = -1
+            if (!uiPreferencesViewModel.getUseDirectIntent()) {
+                uiPreferencesViewModel.setUseDirectIntent(true)
+            }
         }
     }
 
