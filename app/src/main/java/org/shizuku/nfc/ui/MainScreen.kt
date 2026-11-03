@@ -87,7 +87,7 @@ fun MainScreen(
     val coroutineScope = rememberCoroutineScope()
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
 
-    var startupReady by remember { mutableStateOf(false) }
+    var startupReady by remember { mutableStateOf(startupViewModel?.guideVisible == false) }
 
     // 抽屉与路由状态（完全对齐 shizuku-ftp 侧栏路由架构）
     val sideMenuState = rememberSideMenuState()
@@ -414,12 +414,19 @@ fun MainScreen(
                         startupViewModel?.replay()
                     }
                     "update" -> {
-                        updateViewModel?.checkManually { isNewAvailable, version ->
-                            Toast.makeText(
-                                context,
-                                if (isNewAvailable) "发现新版本: v$version" else "当前已是最新版 (v$version)",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                        sideMenuState.close()
+                        updateViewModel?.checkManually { latest, isNewAvailable ->
+                            when {
+                                latest == null -> {
+                                    Toast.makeText(context, "检查更新失败，请检查网络或稍后重试", Toast.LENGTH_SHORT).show()
+                                }
+                                isNewAvailable -> {
+                                    Toast.makeText(context, "发现新版本: $latest", Toast.LENGTH_SHORT).show()
+                                }
+                                else -> {
+                                    Toast.makeText(context, "当前已是最新版 ($latest)", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                     }
                     "wallpaper" -> {
@@ -577,6 +584,7 @@ fun MainScreen(
                         onBack = onBack
                     )
                     "about" -> AboutDestinationScreen(
+                        colorBag = colorBag,
                         onBack = onBack
                     )
                 }
@@ -628,7 +636,8 @@ fun MainScreen(
             )
             StartupUpdatePrompt(
                 ready = startupReady,
-                viewModel = updateViewModel
+                viewModel = updateViewModel,
+                colorBag = colorBag
             )
         }
     }

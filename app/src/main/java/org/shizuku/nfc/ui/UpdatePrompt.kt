@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.widget.Toast
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
@@ -22,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.shizuku.nfc.R
+import org.shizuku.nfc.ui.data.ColorBag
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -64,8 +64,9 @@ class UpdatePromptViewModel(application: Application) : AndroidViewModel(applica
 
     /**
      * 用户在 UI 手动点击“检查更新”时调用，带状态回调
+     * [onComplete] 回调参数：(latestVersion: 远程最新版本号，若请求失败则为 null, isNewAvailable: 是否有更高版本)
      */
-    fun checkManually(onComplete: (isNewAvailable: Boolean, version: String?) -> Unit) {
+    fun checkManually(onComplete: (latest: String?, isNewAvailable: Boolean) -> Unit) {
         if (isChecking) return
         isChecking = true
         viewModelScope.launch {
@@ -73,12 +74,11 @@ class UpdatePromptViewModel(application: Application) : AndroidViewModel(applica
             val current = getAppVersionName(getApplication())
             isChecking = false
 
-            if (latest != null && compareVersions(current, latest) < 0) {
+            val isNew = latest != null && compareVersions(current, latest) < 0
+            if (isNew) {
                 updateVersion = latest
-                onComplete(true, latest)
-            } else {
-                onComplete(false, latest ?: current)
             }
+            onComplete(latest, isNew)
         }
     }
 
@@ -98,7 +98,8 @@ class UpdatePromptViewModel(application: Application) : AndroidViewModel(applica
 @Composable
 fun StartupUpdatePrompt(
     ready: Boolean = true,
-    viewModel: UpdatePromptViewModel
+    viewModel: UpdatePromptViewModel,
+    colorBag: ColorBag = ColorBag()
 ) {
     LaunchedEffect(ready) {
         if (ready) {
@@ -110,6 +111,7 @@ fun StartupUpdatePrompt(
     if (ready && updateVersion != null) {
         UpdateAvailableDialog(
             version = updateVersion,
+            colorBag = colorBag,
             onDismiss = { viewModel.dismissUpdate() },
             onIgnore = { viewModel.ignoreCurrentVersion(updateVersion) }
         )
@@ -117,47 +119,58 @@ fun StartupUpdatePrompt(
 }
 
 /**
- * 发现新版本更新弹窗（仿照 shizuku-ftp/UpdateAvailableDialog）
+ * 发现新版本更新弹窗（完全仿照 shizuku-ftp/UpdateAvailableDialog）
  */
 @Composable
 fun UpdateAvailableDialog(
     version: String,
+    colorBag: ColorBag = ColorBag(),
     onDismiss: () -> Unit,
-    onIgnore: () -> Unit = {}
+    onIgnore: () -> Unit = {
+        // 默认存入 ignored_update_version 并关闭
+    }
 ) {
     val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences(PREFS_STARTUP, Context.MODE_PRIVATE) }
+    val later = onDismiss
 
-    CompactSettingsDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(stringResource(R.string.update_available_title, version))
-        },
-        text = {
-            Text(stringResource(R.string.update_available_body))
-        },
-        dismissButton = {
-            TextButton(onClick = onIgnore) {
-                Text(stringResource(R.string.update_ignore_version))
-            }
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.update_later))
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    try {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, LATEST_RELEASE_WEB.toUri()))
-                        onDismiss()
-                    } catch (_: android.content.ActivityNotFoundException) {
-                        Toast.makeText(context, R.string.update_no_browser, Toast.LENGTH_SHORT).show()
-                    }
+    WallpaperControlsTheme(colorBag) {
+        CompactSettingsDialog(
+            onDismissRequest = later,
+            title = {
+                Text(stringResource(R.string.update_available_title, version))
+            },
+            text = {
+                Text(stringResource(R.string.update_available_body))
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    prefs.edit { putString(PREF_KEY_IGNORED_VERSION, version) }
+                    onIgnore()
+                    onDismiss()
+                }) {
+                    Text(stringResource(R.string.update_ignore_version))
                 }
-            ) {
-                Text(stringResource(R.string.update_browser))
+                TextButton(onClick = later) {
+                    Text(stringResource(R.string.update_later))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, LATEST_RELEASE_WEB.toUri()))
+                            onDismiss()
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            Toast.makeText(context, R.string.update_no_browser, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.update_browser))
+                }
             }
-        }
-    )
+        )
+    }
 }
 
 // ─── 辅助工具函数 ───
@@ -183,8 +196,8 @@ internal fun fetchLatestVersionFromGithub(): String? {
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             connection.setRequestProperty("User-Agent", "Shizuku-nfc/update-check")
-            connection.connectTimeout = 8_000
-            connection.readTimeout = 8_000
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
                 JSONObject(body).optString("tag_name").takeIf { it.isNotBlank() }

@@ -34,6 +34,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.shizuku.nfc.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 独立的系统注入控制台日志页面（拆为独立页面，完全解决右屏杂乱问题）
@@ -458,18 +461,29 @@ fun ShizukuDestinationScreen(
 }
 
 /**
- * 独立的关于页面
+ * 独立的关于页面（对齐 shizuku-ftp/AboutScreen）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutDestinationScreen(onBack: () -> Unit) {
+fun AboutDestinationScreen(
+    colorBag: ColorBag = ColorBag(),
+    onBack: () -> Unit
+) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var availableUpdate by remember { mutableStateOf<String?>(null) }
+
     val versionName = remember {
-        try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.1.0"
-        } catch (_: Exception) {
-            "1.1.0"
-        }
+        getAppVersionName(context)
+    }
+
+    availableUpdate?.let { version ->
+        UpdateAvailableDialog(
+            version = version,
+            colorBag = colorBag,
+            onDismiss = { availableUpdate = null }
+        )
     }
 
     Scaffold(
@@ -510,11 +524,41 @@ fun AboutDestinationScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
-            Text(
-                text = "版本 $versionName (免 Root 碰一下模拟器)",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "版本 $versionName",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = if (checkingUpdate) "正在检查..." else "检查更新",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable(enabled = !checkingUpdate) {
+                        checkingUpdate = true
+                        scope.launch {
+                            val latest = withContext(Dispatchers.IO) { fetchLatestVersionFromGithub() }
+                            checkingUpdate = false
+                            when {
+                                latest == null -> {
+                                    Toast.makeText(context, "检查更新失败，请检查网络或稍后重试", Toast.LENGTH_SHORT).show()
+                                }
+                                compareVersions(versionName, latest) < 0 -> {
+                                    availableUpdate = latest
+                                }
+                                else -> {
+                                    Toast.makeText(context, "当前已是最新版 ($latest)", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+                )
+            }
             Spacer(Modifier.height(24.dp))
             Text(
                 text = "基于 Shizuku (UID 2000) 机制调用系统 INfcAdapter 派发硬件 Tag 事件，完美触发支付宝碰一下与小程序引擎。",

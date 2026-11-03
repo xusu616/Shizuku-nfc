@@ -36,6 +36,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import org.shizuku.nfc.R
+import org.shizuku.nfc.ui.data.ColorBag
 
 private const val PREFS_STARTUP = "startup_experience"
 private const val PREF_KEY_GUIDE_DONE = "home_guide_v1_done"
@@ -65,8 +66,10 @@ class StartupViewModel(application: Application) : AndroidViewModel(application)
 @Composable
 fun StartupExperience(
     state: StartupViewModel,
+    colorBag: ColorBag = ColorBag(),
     onReady: () -> Unit = {}
 ) {
+    WallpaperControlsTheme(colorBag) {
     val visibility = remember { MutableTransitionState(false) }
     visibility.targetState = state.guideVisible
 
@@ -185,6 +188,7 @@ fun StartupExperience(
             }
         }
     }
+}
 }
 
 private val guideTitles = listOf(
