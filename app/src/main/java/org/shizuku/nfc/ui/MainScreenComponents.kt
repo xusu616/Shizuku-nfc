@@ -168,7 +168,7 @@ fun ServerControlButton(
         )
     ) {
         Text(
-            text = if (isExecuting) "派发中..." else "碰一下 (TOUCH)",
+            text = if (isExecuting) "派发中..." else "TOUCH",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp
@@ -367,7 +367,6 @@ fun WallpaperBase(
 fun MainHeroLayout(
     wallpaperBitmap: ImageBitmap?,
     topBarPressedDown: Boolean = true,
-    heroHeight: androidx.compose.ui.unit.Dp = 380.dp,
     onWallpaperLongPress: () -> Unit = {},
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -382,7 +381,7 @@ fun MainHeroLayout(
         }
 
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(8.dp))
@@ -390,8 +389,8 @@ fun MainHeroLayout(
             if (topBarPressedDown) Spacer(Modifier.height(cutoutHeight.coerceAtLeast(8.dp) - 8.dp))
 
             val heroModifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
-                .height(heroHeight)
                 .pointerInput(Unit) {
                     detectTapGestures(onLongPress = { onWallpaperLongPress() })
                 }

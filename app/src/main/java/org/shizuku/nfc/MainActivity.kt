@@ -5,12 +5,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import org.shizuku.nfc.ui.MainScreen
 import org.shizuku.nfc.ui.ShizukuNfcTheme
+import org.shizuku.nfc.ui.UiPreferencesViewModel
+import org.shizuku.nfc.ui.WallpaperControlsTheme
+import org.shizuku.nfc.ui.data.ColorBag
+import org.shizuku.nfc.ui.data.WallpaperColorEnum
+import org.shizuku.nfc.ui.util.WallpaperPalette
+import org.shizuku.nfc.ui.util.rememberWallpaperAccentColor
+import org.shizuku.nfc.ui.viewmodel.WallpaperViewModel
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
@@ -18,6 +29,9 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val SHIZUKU_PERMISSION_REQUEST_CODE = 1001
     }
+
+    private val uiPreferencesViewModel: UiPreferencesViewModel by viewModels()
+    private val wallpaperViewModel: WallpaperViewModel by viewModels()
 
     private var isShizukuRunning by mutableStateOf(false)
     private var isShizukuPermissionGranted by mutableStateOf(false)
@@ -60,14 +74,48 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ShizukuNfcTheme {
-                MainScreen(
-                    isShizukuRunning = isShizukuRunning,
-                    isShizukuPermissionGranted = isShizukuPermissionGranted,
-                    shizukuVersion = shizukuVersion,
-                    onRequestPermission = {
-                        requestShizukuPermission()
-                    }
-                )
+                val wallpaperBitmap: ImageBitmap? = wallpaperViewModel.wallpaper.collectAsState().value
+                val usrM3 = uiPreferencesViewModel.usrM3ToPickColors.collectAsState().value
+                val colorBag = if (LocalInspectionMode.current) {
+                    ColorBag(
+                        vibrant = Color(0xFF90CAF9),
+                        darkMuted = Color(0xFF1E3A5F),
+                        lightMuted = Color(0xFFD1E4FA),
+                        muted = Color(0xFF64B5F6),
+                        useM3Color = false
+                    )
+                } else {
+                    ColorBag(
+                        vibrant = rememberWallpaperAccentColor(WallpaperPalette(bitmap = wallpaperBitmap)),
+                        darkMuted = rememberWallpaperAccentColor(
+                            WallpaperPalette(bitmap = wallpaperBitmap),
+                            type = WallpaperColorEnum.DARK_MUTED
+                        ),
+                        lightMuted = rememberWallpaperAccentColor(
+                            WallpaperPalette(bitmap = wallpaperBitmap),
+                            type = WallpaperColorEnum.LIGHT_MUTED
+                        ),
+                        muted = rememberWallpaperAccentColor(
+                            WallpaperPalette(bitmap = wallpaperBitmap),
+                            type = WallpaperColorEnum.MUTED
+                        ),
+                        useM3Color = usrM3
+                    )
+                }
+
+                WallpaperControlsTheme(colorBag = colorBag) {
+                    MainScreen(
+                        isShizukuRunning = isShizukuRunning,
+                        isShizukuPermissionGranted = isShizukuPermissionGranted,
+                        shizukuVersion = shizukuVersion,
+                        onRequestPermission = {
+                            requestShizukuPermission()
+                        },
+                        uiPreferencesViewModel = uiPreferencesViewModel,
+                        wallpaperViewModel = wallpaperViewModel,
+                        providedColorBag = colorBag
+                    )
+                }
             }
         }
     }

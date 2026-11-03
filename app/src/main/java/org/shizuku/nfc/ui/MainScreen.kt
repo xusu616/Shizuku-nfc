@@ -53,6 +53,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import org.shizuku.nfc.NfcEmulator
 import org.shizuku.nfc.R
+import org.shizuku.nfc.ui.data.ColorBag
+import org.shizuku.nfc.ui.data.WallpaperColorEnum
+import org.shizuku.nfc.ui.util.WallpaperPalette
+import org.shizuku.nfc.ui.util.rememberWallpaperAccentColor
+import org.shizuku.nfc.ui.viewmodel.WallpaperViewModel
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.*
@@ -72,7 +77,9 @@ fun MainScreen(
     shizukuVersion: Int = 13,
     onRequestPermission: () -> Unit = {},
     previewColorBag: ColorBag? = null,
+    providedColorBag: ColorBag? = null,
     uiPreferencesViewModel: UiPreferencesViewModel? = if (LocalInspectionMode.current) null else viewModel(),
+    wallpaperViewModel: WallpaperViewModel? = if (LocalInspectionMode.current) null else viewModel(),
     startupViewModel: StartupViewModel? = if (LocalInspectionMode.current) null else viewModel(),
     updateViewModel: UpdatePromptViewModel? = if (LocalInspectionMode.current) null else viewModel()
 ) {
@@ -100,25 +107,9 @@ fun MainScreen(
         }
     }
 
-    // 自定义壁纸状态
-    var customWallpaperBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    val wallpaperPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val bmp = BitmapFactory.decodeStream(stream)
-                    if (bmp != null) {
-                        customWallpaperBitmap = bmp.asImageBitmap()
-                        Toast.makeText(context, "已设置自定义专属壁纸", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } catch (e: Exception) {
-                Toast.makeText(context, "壁纸加载失败: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    // 自定义壁纸状态（完全对齐 shizuku-ftp WallpaperViewModel 管理）
+    val wallpaperBitmap: ImageBitmap? = wallpaperViewModel?.wallpaper?.collectAsState()?.value
+    val wallpaperPicker = rememberWallpaperPicker { wallpaperViewModel?.update(it) }
 
     // 负载模式与配置
     var selectedMode by remember { mutableStateOf(PayloadMode.DEFAULT_ALIPAY) }
@@ -263,11 +254,26 @@ fun MainScreen(
     val glassSideMenuWallpaper = uiPreferencesViewModel?.glassSideMenuWallpaper?.value ?: true
     val sideMenuSpringAnimation by (uiPreferencesViewModel?.sideMenuSpringAnimation ?: flowOf(true)).collectAsState(true)
     val experimentalHaze by (uiPreferencesViewModel?.experimentalHaze ?: flowOf(false)).collectAsState(false)
-    val usrM3ToPickColors by (uiPreferencesViewModel?.usrM3ToPickColors ?: flowOf(true)).collectAsState(true)
+    val usrM3ToPickColors by (uiPreferencesViewModel?.usrM3ToPickColors ?: flowOf(false)).collectAsState(false)
 
     val hazeState = rememberHazeState()
     val sidebarBackdrop = rememberGlassBackdrop()
-    val colorBag = previewColorBag ?: ColorBag(useM3Color = usrM3ToPickColors)
+    val colorBag = previewColorBag ?: providedColorBag ?: ColorBag(
+        vibrant = rememberWallpaperAccentColor(WallpaperPalette(bitmap = wallpaperBitmap)),
+        darkMuted = rememberWallpaperAccentColor(
+            WallpaperPalette(bitmap = wallpaperBitmap),
+            type = WallpaperColorEnum.DARK_MUTED
+        ),
+        lightMuted = rememberWallpaperAccentColor(
+            WallpaperPalette(bitmap = wallpaperBitmap),
+            type = WallpaperColorEnum.LIGHT_MUTED
+        ),
+        muted = rememberWallpaperAccentColor(
+            WallpaperPalette(bitmap = wallpaperBitmap),
+            type = WallpaperColorEnum.MUTED
+        ),
+        useM3Color = usrM3ToPickColors
+    )
 
     val railPadding by animateDpAsState(
         targetValue = if (railVisible) 64.dp else 0.dp,
@@ -286,7 +292,7 @@ fun MainScreen(
     // ── 外层全屏容器 ──
     Box(modifier = Modifier.fillMaxSize()) {
         // 1. 底层真实壁纸（参考 commit 7ae6ff86：动画挂载时 source layer 可能失效，必须打底保底，永不露黑底）
-        WallpaperBase(wallpaperBitmap = customWallpaperBitmap)
+        WallpaperBase(wallpaperBitmap = wallpaperBitmap)
 
         // 2. 独立采样图层（参考 commit 17b9074c：独立 RenderNode 避免兄弟组件重绘时清空 Haze 采样）
         Box(
@@ -295,7 +301,7 @@ fun MainScreen(
                 .graphicsLayer()
                 .hazeSource(state = hazeState)
         ) {
-            WallpaperBase(wallpaperBitmap = customWallpaperBitmap)
+            WallpaperBase(wallpaperBitmap = wallpaperBitmap)
         }
 
         // 3. 全局毛玻璃磨砂覆盖层（模糊半径与实验性开关由偏好设置动态驱动）
@@ -385,12 +391,11 @@ fun MainScreen(
                         .background(MaterialTheme.colorScheme.background)
                 ) {
                     MainHeroLayout(
-                        wallpaperBitmap = customWallpaperBitmap,
+                        wallpaperBitmap = wallpaperBitmap,
                         topBarPressedDown = topBarPressedDown,
-                        heroHeight = 360.dp,
                         onWallpaperLongPress = { wallpaperPicker.launch("image/*") }
                     ) {
-                        // 顶部控制行：折叠侧栏 + 居中高光碰一下胶囊按钮 + 工具快捷按钮
+                        // 顶部控制行：折叠侧栏 + 居中高光碰一下胶囊按钮
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -406,7 +411,7 @@ fun MainScreen(
                                 useOriginColor = colorBag.useM3Color
                             )
 
-                            Spacer(modifier = Modifier.weight(0.1f))
+                            Spacer(modifier = Modifier.weight(0.2f))
 
                             // 核心碰一下胶囊按钮 (ServerControlButton 风格)
                             ServerControlButton(
@@ -414,26 +419,7 @@ fun MainScreen(
                                 onClick = { doTriggerTouch() }
                             )
 
-                            Spacer(modifier = Modifier.weight(0.1f))
-
-                            // 工具快捷按钮 (Link)
-                            FilledTonalIconButton(
-                                onClick = { sideMenuState.open(SideMenu.TOOLS) },
-                                modifier = Modifier.size(48.dp),
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.link),
-                                    contentDescription = "打开功能与工具",
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .rotate(gearRotation),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
+                            Spacer(modifier = Modifier.weight(0.8f))
                         }
 
                         Spacer(modifier = Modifier.height(32.dp))
@@ -444,8 +430,7 @@ fun MainScreen(
                                 .fillMaxWidth()
                                 .padding(horizontal = 20.dp)
                                 .clickable {
-                                    sideMenuState.open(SideMenu.TOOLS)
-                                    sideMenuState.showDetail("payload")
+                                    sideMenuState.openDirectDetail(SideMenu.TOOLS, "payload")
                                 },
                             shape = RoundedCornerShape(22.dp),
                             colors = CardDefaults.cardColors(
