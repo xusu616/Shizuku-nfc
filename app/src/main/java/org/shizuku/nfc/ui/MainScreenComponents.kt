@@ -372,7 +372,7 @@ fun MainHeroLayout(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val useBackgroundHero = maxWidth > maxHeight && maxHeight < 1600.dp
+        val useBackgroundHero = maxWidth > maxHeight && maxHeight < 800.dp
         if (useBackgroundHero) {
             MainHeroImage(
                 wallpaperBitmap = wallpaperBitmap,

@@ -49,6 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import org.shizuku.nfc.NfcEmulator
 import org.shizuku.nfc.R
@@ -71,6 +72,7 @@ fun MainScreen(
     shizukuVersion: Int = 13,
     onRequestPermission: () -> Unit = {},
     previewColorBag: ColorBag? = null,
+    uiPreferencesViewModel: UiPreferencesViewModel? = if (LocalInspectionMode.current) null else viewModel(),
     startupViewModel: StartupViewModel? = if (LocalInspectionMode.current) null else viewModel(),
     updateViewModel: UpdatePromptViewModel? = if (LocalInspectionMode.current) null else viewModel()
 ) {
@@ -255,10 +257,17 @@ fun MainScreen(
         }
     }
 
-    // 毛玻璃与动画参数
+    // 毛玻璃与动画参数（完全对齐 shizuku-ftp 响应式偏好设置）
+    val blurIntensity by (uiPreferencesViewModel?.blurIntensity ?: flowOf(25f)).collectAsState(25f)
+    val topBarPressedDown by (uiPreferencesViewModel?.topComponentPressedDown ?: flowOf(true)).collectAsState(true)
+    val glassSideMenuWallpaper = uiPreferencesViewModel?.glassSideMenuWallpaper?.value ?: true
+    val sideMenuSpringAnimation by (uiPreferencesViewModel?.sideMenuSpringAnimation ?: flowOf(true)).collectAsState(true)
+    val experimentalHaze by (uiPreferencesViewModel?.experimentalHaze ?: flowOf(false)).collectAsState(false)
+    val usrM3ToPickColors by (uiPreferencesViewModel?.usrM3ToPickColors ?: flowOf(true)).collectAsState(true)
+
     val hazeState = rememberHazeState()
     val sidebarBackdrop = rememberGlassBackdrop()
-    val colorBag = previewColorBag ?: ColorBag()
+    val colorBag = previewColorBag ?: ColorBag(useM3Color = usrM3ToPickColors)
 
     val railPadding by animateDpAsState(
         targetValue = if (railVisible) 64.dp else 0.dp,
@@ -289,13 +298,14 @@ fun MainScreen(
             WallpaperBase(wallpaperBitmap = customWallpaperBitmap)
         }
 
-        // 3. 全局毛玻璃磨砂覆盖层
+        // 3. 全局毛玻璃磨砂覆盖层（模糊半径与实验性开关由偏好设置动态驱动）
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .glassHaze(
                     hazeState = hazeState,
-                    blurIntensity = 25f,
+                    blurIntensity = blurIntensity,
+                    weatherEnableExperimentalHazeOnLowVer = experimentalHaze,
                     darkTint = Color.Black.copy(alpha = 0.18f),
                     lightTint = Color.White.copy(alpha = 0.22f),
                     darkFallback = Color.Black.copy(alpha = 0.50f),
@@ -307,7 +317,8 @@ fun MainScreen(
         CaptureGlassBackdrop(
             backdrop = sidebarBackdrop,
             hazeState = hazeState,
-            blurIntensity = 25f,
+            blurIntensity = blurIntensity,
+            experimentalHaze = experimentalHaze,
         )
 
         // ── 左侧窄边栏 (NarrowWallpaperRail) 严格保持 3 大标准按钮 ──
@@ -342,6 +353,8 @@ fun MainScreen(
             railPadding = railPadding,
             backdrop = sidebarBackdrop,
             colorBag = colorBag,
+            showWallpaper = glassSideMenuWallpaper,
+            springAnimation = sideMenuSpringAnimation,
             onNavigate = { route ->
                 when (route) {
                     "guide" -> {
@@ -373,8 +386,8 @@ fun MainScreen(
                 ) {
                     MainHeroLayout(
                         wallpaperBitmap = customWallpaperBitmap,
-                        topBarPressedDown = true,
-                        heroHeight = 380.dp,
+                        topBarPressedDown = topBarPressedDown,
+                        heroHeight = 360.dp,
                         onWallpaperLongPress = { wallpaperPicker.launch("image/*") }
                     ) {
                         // 顶部控制行：折叠侧栏 + 居中高光碰一下胶囊按钮 + 工具快捷按钮
@@ -423,9 +436,9 @@ fun MainScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(36.dp))
+                        Spacer(modifier = Modifier.height(32.dp))
 
-                        // ── 简约分散卡片 1：当前活跃 NDEF 负载与 Shizuku 状态胶囊条 ──
+                        // ── 简约分散卡片：当前活跃 NDEF 负载与 Shizuku 状态胶囊条（右侧主屏极致极简，去繁存精） ──
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -486,67 +499,6 @@ fun MainScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(22.dp))
-
-                        // ── 简约分散卡片 2：极简执行动态条（点击直达独立全屏控制台页面） ──
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp)
-                                .clickable {
-                                    sideMenuState.open(SideMenu.TOOLS)
-                                    sideMenuState.showDetail("logs")
-                                },
-                            shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.50f)
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(18.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "最新执行动态",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "独立控制台 ❯",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
-                                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                                ) {
-                                    val lastLog = logs.lastOrNull()
-                                    Text(
-                                        text = lastLog ?: "就绪。点击上方高光胶囊按钮开始模拟注入...",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (lastLog != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-
                         Spacer(modifier = Modifier.height(48.dp))
                     }
                 }
@@ -571,6 +523,11 @@ fun MainScreen(
                             appendLog("已选择本地 NDEF: $name")
                         },
                         recordsInfo = recordsInfo,
+                        onBack = onBack
+                    )
+                    "ui_settings" -> UiSettingsDestinationScreen(
+                        uiPreferencesViewModel = uiPreferencesViewModel,
+                        colorBag = colorBag,
                         onBack = onBack
                     )
                     "shizuku" -> ShizukuDestinationScreen(

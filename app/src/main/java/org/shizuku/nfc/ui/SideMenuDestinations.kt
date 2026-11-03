@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -430,6 +432,159 @@ fun AboutDestinationScreen(onBack: () -> Unit) {
                 text = "基于 Shizuku (UID 2000) 机制调用系统 INfcAdapter 派发硬件 Tag 事件，完美触发支付宝碰一下与小程序引擎。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * 独立的界面显示与动效个性化设置页面（完全对齐 shizuku-ftp/SettingScreenUi）
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun UiSettingsDestinationScreen(
+    uiPreferencesViewModel: UiPreferencesViewModel?,
+    colorBag: ColorBag = ColorBag(),
+    onBack: () -> Unit
+) {
+    val prefs = LocalContext.current.getSharedPreferences("ui_state", android.content.Context.MODE_PRIVATE)
+
+    var blurIntensity by remember {
+        mutableFloatStateOf(uiPreferencesViewModel?.getBlurIntensity() ?: UiPreferences.getBlurIntensity(prefs))
+    }
+    var stateBarPressDown by remember {
+        mutableStateOf(uiPreferencesViewModel?.getTopComponentPressedDown() ?: UiPreferences.getTopComponentPressedDown(prefs))
+    }
+    var usrM3ToPickColors by remember {
+        mutableStateOf(uiPreferencesViewModel?.getUsrM3ToPickColors() ?: UiPreferences.getUsrM3ToPickColors(prefs))
+    }
+    var glassSideMenuWallpaper by remember {
+        mutableStateOf(uiPreferencesViewModel?.getGlassSideMenuWallpaper() ?: UiPreferences.getGlassSideMenuWallpaper(prefs))
+    }
+    var sideMenuSpringAnimation by remember {
+        mutableStateOf(uiPreferencesViewModel?.getSideMenuSpringAnimation() ?: UiPreferences.getSideMenuSpringAnimation(prefs))
+    }
+    var experimentalHaze by remember {
+        mutableStateOf(uiPreferencesViewModel?.getExperimentalHaze() ?: UiPreferences.getExperimentalHaze(prefs))
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("界面与个性化", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 8.dp)
+        ) {
+            Text(
+                text = "毛玻璃与视觉效果",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
+            SliderRow(
+                sliderStep = 7,
+                minSlideValue = 5f,
+                maxSlideValue = 40f,
+                sliderTitle = "背景模糊强度",
+                sliderDescription = "调整全局毛玻璃底衬及侧栏磨砂采样的高斯模糊半径",
+                rememberedSliderPosition = blurIntensity,
+                onSliderValueChange = { newValue ->
+                    blurIntensity = newValue
+                    uiPreferencesViewModel?.setBlurIntensity(newValue)
+                },
+                colorBag = colorBag
+            )
+
+            SwitchPrefRow(
+                title = "侧栏毛玻璃背景投影",
+                description = "在滑动的侧栏抽屉上渲染半透明毛玻璃背景；关闭则显示纯色面板",
+                checked = glassSideMenuWallpaper,
+                colorBag = colorBag,
+                onCheckedChange = {
+                    glassSideMenuWallpaper = it
+                    uiPreferencesViewModel?.setGlassSideMenuWallpaper(it)
+                }
+            )
+
+            SwitchPrefRow(
+                title = "低版本实验性模糊兼容",
+                description = "在非 Android 12+ 原生 RenderEffect 环境尝试强制开启模糊着色器",
+                checked = experimentalHaze,
+                colorBag = colorBag,
+                onCheckedChange = {
+                    experimentalHaze = it
+                    uiPreferencesViewModel?.setExperimentalHaze(it)
+                }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
+
+            Text(
+                text = "动效与布局适配",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
+            SwitchPrefRow(
+                title = "侧栏弹性弹簧阻尼动画",
+                description = "抽屉展开与收起时启用物理弹性回弹阻尼动效（关闭可降低部分设备负载）",
+                checked = sideMenuSpringAnimation,
+                colorBag = colorBag,
+                onCheckedChange = {
+                    sideMenuSpringAnimation = it
+                    uiPreferencesViewModel?.setSideMenuSpringAnimation(it)
+                }
+            )
+
+            SwitchPrefRow(
+                title = "顶部组件下压适配",
+                description = "留出手机前置挖孔与屏下视距，保持主屏幕视觉开阔与舒适下移",
+                checked = stateBarPressDown,
+                colorBag = colorBag,
+                onCheckedChange = {
+                    stateBarPressDown = it
+                    uiPreferencesViewModel?.setTopComponentPressedDown(it)
+                }
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
+
+            Text(
+                text = "主题色彩提取",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+
+            SwitchPrefRow(
+                title = "使用 Material 3 动态取色",
+                description = "开启优先使用系统 Material You 色盘；关闭时智能匹配当前自定义壁纸基色",
+                checked = usrM3ToPickColors,
+                colorBag = colorBag,
+                onCheckedChange = {
+                    usrM3ToPickColors = it
+                    uiPreferencesViewModel?.setUsrM3ToPickColors(it)
+                }
             )
         }
     }

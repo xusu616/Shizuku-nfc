@@ -43,6 +43,8 @@ fun SideMenuLayout(
     railPadding: Dp,
     backdrop: GlassBackdrop,
     colorBag: ColorBag = ColorBag(),
+    showWallpaper: Boolean = true,
+    springAnimation: Boolean = true,
     onNavigate: (String) -> Unit,
     mainContent: @Composable (startPadding: Dp) -> Unit,
     detailContent: @Composable (route: String, expanded: Boolean, onBack: () -> Unit) -> Unit,
@@ -51,7 +53,7 @@ fun SideMenuLayout(
         val expanded = maxWidth >= 600.dp
         val mainStartPadding by animateDpAsState(
             targetValue = if (expanded && state.isOpen) GlassSideMenuWidth else railPadding,
-            animationSpec = if (state.isOpen) {
+            animationSpec = if (state.isOpen && springAnimation) {
                 spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow)
             } else tween(300),
             label = "sideMenuContentPadding",
@@ -84,7 +86,9 @@ fun SideMenuLayout(
                 targetState = state.detailRoute,
                 transitionSpec = {
                     val entering = slideInHorizontally(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+                        animationSpec = if (springAnimation) {
+                            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
+                        } else tween(300),
                         initialOffsetX = { it },
                     ) + fadeIn(tween(300))
                     val exiting = slideOutHorizontally(
@@ -129,6 +133,8 @@ fun SideMenuLayout(
             backdrop = backdrop,
             onClick = state::close,
             colorBag = colorBag,
+            showWallpaper = showWallpaper,
+            springAnimation = springAnimation,
             selectedRoute = state.detailRoute,
         )
         GearSideMenu(
@@ -143,6 +149,8 @@ fun SideMenuLayout(
             backdrop = backdrop,
             onClick = state::close,
             colorBag = colorBag,
+            showWallpaper = showWallpaper,
+            springAnimation = springAnimation,
             selectedRoute = state.detailRoute,
         )
     }

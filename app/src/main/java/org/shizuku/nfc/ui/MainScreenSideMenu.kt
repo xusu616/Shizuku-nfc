@@ -27,6 +27,8 @@ fun LinkSideMenu(
     backdrop: GlassBackdrop,
     onClick: () -> Unit,
     colorBag: ColorBag = ColorBag(),
+    showWallpaper: Boolean = true,
+    springAnimation: Boolean = true,
     selectedRoute: String? = null,
 ) {
     Box {
@@ -34,10 +36,10 @@ fun LinkSideMenu(
             visible = visible,
             enter = slideInHorizontally(
                 initialOffsetX = { -it },
-                animationSpec = spring(
+                animationSpec = if (springAnimation) spring(
                     dampingRatio = Spring.DampingRatioLowBouncy,
                     stiffness = Spring.StiffnessLow
-                )
+                ) else tween(300)
             ) + fadeIn(animationSpec = tween(300)),
             exit = slideOutHorizontally(
                 targetOffsetX = { -it },
@@ -47,7 +49,7 @@ fun LinkSideMenu(
         ) {
             GlassSidebarBox(
                 backdrop = backdrop,
-                showWallpaper = true,
+                showWallpaper = showWallpaper,
                 onDismiss = onClick,
                 content = {
                     Text(
@@ -118,6 +120,8 @@ fun GearSideMenu(
     backdrop: GlassBackdrop,
     onClick: () -> Unit,
     colorBag: ColorBag = ColorBag(),
+    showWallpaper: Boolean = true,
+    springAnimation: Boolean = true,
     selectedRoute: String? = null,
 ) {
     Box {
@@ -125,10 +129,10 @@ fun GearSideMenu(
             visible = visible,
             enter = slideInHorizontally(
                 initialOffsetX = { -it },
-                animationSpec = spring(
+                animationSpec = if (springAnimation) spring(
                     dampingRatio = Spring.DampingRatioLowBouncy,
                     stiffness = Spring.StiffnessLow
-                )
+                ) else tween(300)
             ) + fadeIn(animationSpec = tween(300)),
             exit = slideOutHorizontally(
                 targetOffsetX = { -it },
@@ -138,7 +142,7 @@ fun GearSideMenu(
         ) {
             GlassSidebarBox(
                 backdrop = backdrop,
-                showWallpaper = true,
+                showWallpaper = showWallpaper,
                 onDismiss = onClick,
                 content = {
                     Text(
@@ -167,7 +171,16 @@ fun GearSideMenu(
                         onClick = { onMenuClick("shizuku") }
                     )
 
-                    // 2. 自定义桌面壁纸
+                    // 2. 界面与动效设置
+                    RowClick(
+                        icon = R.drawable.uisetting_coarse,
+                        text = "界面与个性化",
+                        selected = selectedRoute == "ui_settings",
+                        colorBag = colorBag,
+                        onClick = { onMenuClick("ui_settings") }
+                    )
+
+                    // 3. 自定义桌面壁纸
                     RowClick(
                         icon = R.drawable.cleaner,
                         text = "更换主屏壁纸",
@@ -176,7 +189,7 @@ fun GearSideMenu(
                         onClick = { onMenuClick("wallpaper") }
                     )
 
-                    // 3. 关于与致谢
+                    // 4. 关于与致谢
                     RowClick(
                         icon = R.drawable.outline_info_24,
                         text = "关于 Shizuku-nfc",
