@@ -19,6 +19,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import org.shizuku.nfc.R
 import org.shizuku.nfc.ui.data.ColorBag
@@ -27,6 +28,7 @@ import java.net.URL
 
 private const val GITHUB_REPO = "rD227/Shizuku-nfc"
 private const val LATEST_RELEASE_API = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
+private const val GITLAB_RELEASES_API = "https://gitlab.com/api/v4/projects/xusu616%2FShizuku-nfc/releases?per_page=1"
 private const val LATEST_RELEASE_WEB = "https://github.com/$GITHUB_REPO/releases/latest"
 private const val PREFS_STARTUP = "startup_experience"
 private const val PREF_KEY_IGNORED_VERSION = "ignored_update_version"
@@ -156,10 +158,14 @@ fun UpdateAvailableDialog(
                 }
             },
             confirmButton = {
+                val tag = if (version.startsWith("v", ignoreCase = true)) version else "v$version"
+                val webUrl = "https://github.com/$GITHUB_REPO/releases/tag/$tag"
+                val directDownloadUrl = "https://github.com/$GITHUB_REPO/releases/download/$tag/shizuku-nfc-release.apk"
+
                 TextButton(
                     onClick = {
                         try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, LATEST_RELEASE_WEB.toUri()))
+                            context.startActivity(Intent(Intent.ACTION_VIEW, webUrl.toUri()))
                             onDismiss()
                         } catch (_: android.content.ActivityNotFoundException) {
                             Toast.makeText(context, R.string.update_no_browser, Toast.LENGTH_SHORT).show()
@@ -167,6 +173,18 @@ fun UpdateAvailableDialog(
                     }
                 ) {
                     Text(stringResource(R.string.update_browser))
+                }
+                TextButton(
+                    onClick = {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, directDownloadUrl.toUri()))
+                            onDismiss()
+                        } catch (_: android.content.ActivityNotFoundException) {
+                            Toast.makeText(context, R.string.update_no_browser, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.update_direct_download))
                 }
             }
         )
@@ -190,7 +208,7 @@ internal fun getAppVersionName(context: Context): String {
 }
 
 internal fun fetchLatestVersionFromGithub(): String? {
-    return try {
+    val githubVersion = try {
         val connection = URL(LATEST_RELEASE_API).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
@@ -201,6 +219,42 @@ internal fun fetchLatestVersionFromGithub(): String? {
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
                 JSONObject(body).optString("tag_name").takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
+        } finally {
+            connection.disconnect()
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+
+    if (githubVersion != null) {
+        return githubVersion
+    }
+
+    return fetchLatestVersionFromGitlab()
+}
+
+internal fun fetchLatestVersionFromGitlab(): String? {
+    return try {
+        val connection = URL(GITLAB_RELEASES_API).openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.setRequestProperty("Accept", "application/json")
+            connection.setRequestProperty("User-Agent", "Shizuku-nfc/update-check")
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                val array = JSONArray(body)
+                if (array.length() > 0) {
+                    val first = array.optJSONObject(0)
+                    first?.optString("tag_name")?.takeIf { it.isNotBlank() }
+                } else {
+                    null
+                }
             } else {
                 null
             }

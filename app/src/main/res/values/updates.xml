@@ -5,6 +5,7 @@
     <string name="update_available_body">A new version is available. Open the release page in your browser to read the release notes and download the update.\n\nChoose “Remind me later” to be reminded the next time you start the app, or “Ignore this update” to skip this version. Tapping outside this dialog also postpones the reminder until the next startup.</string>
     <string name="update_later">Remind me later</string>
     <string name="update_browser">Open in browser</string>
+    <string name="update_direct_download">Direct update</string>
     <string name="update_no_browser">No browser is available to open the release page.</string>
     <string name="update_check_now">Check for updates</string>
     <string name="update_already_latest">You are already on the latest version (%1$s).</string>
