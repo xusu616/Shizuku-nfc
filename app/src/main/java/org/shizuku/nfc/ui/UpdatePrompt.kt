@@ -30,8 +30,15 @@ private const val GITHUB_REPO = "rD227/Shizuku-nfc"
 private const val LATEST_RELEASE_API = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
 private const val GITLAB_RELEASES_API = "https://gitlab.com/api/v4/projects/xusu616%2FShizuku-nfc/releases?per_page=1"
 private const val LATEST_RELEASE_WEB = "https://github.com/$GITHUB_REPO/releases/latest"
+private const val GITLAB_RELEASES_WEB = "https://gitlab.com/xusu616/Shizuku-nfc/-/releases"
 private const val PREFS_STARTUP = "startup_experience"
 private const val PREF_KEY_IGNORED_VERSION = "ignored_update_version"
+
+@Volatile
+internal var latestReleaseWebUrl: String? = null
+
+@Volatile
+internal var latestReleaseDownloadUrl: String? = null
 
 /**
  * 自动更新检查 ViewModel（完全仿照 shizuku-ftp/UpdatePromptViewModel）
@@ -159,8 +166,8 @@ fun UpdateAvailableDialog(
             },
             confirmButton = {
                 val tag = if (version.startsWith("v", ignoreCase = true)) version else "v$version"
-                val webUrl = "https://github.com/$GITHUB_REPO/releases/tag/$tag"
-                val directDownloadUrl = "https://github.com/$GITHUB_REPO/releases/download/$tag/shizuku-nfc-release.apk"
+                val webUrl = latestReleaseWebUrl ?: "https://github.com/$GITHUB_REPO/releases/tag/$tag"
+                val directDownloadUrl = latestReleaseDownloadUrl ?: "https://github.com/$GITHUB_REPO/releases/download/$tag/shizuku-nfc-release.apk"
 
                 TextButton(
                     onClick = {
@@ -218,7 +225,13 @@ internal fun fetchLatestVersionFromGithub(): String? {
             connection.readTimeout = 10_000
             if (connection.responseCode == HttpURLConnection.HTTP_OK) {
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
-                JSONObject(body).optString("tag_name").takeIf { it.isNotBlank() }
+                val json = JSONObject(body)
+                val tag = json.optString("tag_name").takeIf { it.isNotBlank() }
+                if (tag != null) {
+                    latestReleaseWebUrl = json.optString("html_url").takeIf { it.isNotBlank() } ?: "https://github.com/$GITHUB_REPO/releases/tag/$tag"
+                    latestReleaseDownloadUrl = "https://github.com/$GITHUB_REPO/releases/download/$tag/shizuku-nfc-release.apk"
+                    tag
+                } else null
             } else {
                 null
             }
@@ -251,7 +264,23 @@ internal fun fetchLatestVersionFromGitlab(): String? {
                 val array = JSONArray(body)
                 if (array.length() > 0) {
                     val first = array.optJSONObject(0)
-                    first?.optString("tag_name")?.takeIf { it.isNotBlank() }
+                    val tag = first?.optString("tag_name")?.takeIf { it.isNotBlank() }
+                    if (first != null && tag != null) {
+                        latestReleaseWebUrl = first.optJSONObject("_links")?.optString("self") ?: "$GITLAB_RELEASES_WEB/$tag"
+                        val links = first.optJSONObject("assets")?.optJSONArray("links")
+                        var apkUrl: String? = null
+                        if (links != null) {
+                            for (i in 0 until links.length()) {
+                                val link = links.optJSONObject(i)
+                                if (link?.optString("name")?.endsWith(".apk", ignoreCase = true) == true) {
+                                    apkUrl = link.optString("url").takeIf { it.isNotBlank() }
+                                    break
+                                }
+                            }
+                        }
+                        latestReleaseDownloadUrl = apkUrl ?: latestReleaseWebUrl
+                        tag
+                    } else null
                 } else {
                     null
                 }
