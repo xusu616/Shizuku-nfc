@@ -1,3 +1,5 @@
+> 📦 **Release 下载提示**：请前往对应的 GitLab 仓库查看或下载 Release（GitHub 端暂不重复上传）👉 [https://gitlab.com/xusu616/Shizuku-nfc/-/releases](https://gitlab.com/xusu616/Shizuku-nfc/-/releases) （[GitLab 仓库主页](https://gitlab.com/xusu616/Shizuku-nfc)）
+
 # Shizuku-nfc (支付宝“碰一下”免 Root NFC 事件模拟器)
 
 基于 **ADB Shell / Shizuku 权限 (UID 2000)**，在免 Root 环境下模拟触发包含 2 条 Record 的支付宝“碰一下” NFC NDEF 事件，使支付宝能成功通过 `NdefMessage[]` 与 `Tag` 校验并跳转到对应的小程序界面。
